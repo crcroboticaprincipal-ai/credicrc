@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  background-color: #f1f5f9; /* Fondo claro profesional */
+  color: #1e293b; /* Texto oscuro de alta legibilidad */
+}
+
+/* Scrollbars claros con acento azul */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 181, 246, 0.4);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 181, 246, 0.8);
+}
+
+/* Sombras y brillos adaptados para fondos claros */
+.glow-gold {
+  box-shadow: 0 4px 20px rgba(212, 175, 55, 0.15);
+}
+
+.glow-navy {
+  box-shadow: 0 4px 25px rgba(0, 40, 85, 0.08);
+}
+
+.glow-blue {
+  box-shadow: 0 4px 20px rgba(100, 181, 246, 0.2);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
