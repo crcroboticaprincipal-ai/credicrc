@@ -142,6 +142,21 @@ interface UserAccount {
   created_at: string;
 }
 
+interface LandingConfig {
+  hero_title: string;
+  hero_description: string;
+  portal_trabajador_title: string;
+  portal_trabajador_description: string;
+  portal_proveedor_title: string;
+  portal_proveedor_description: string;
+  portal_admin_title: string;
+  portal_admin_description: string;
+  politicas_financiamiento_title: string;
+  politicas_financiamiento_description: string;
+  estabilidad_seguridad_title: string;
+  estabilidad_seguridad_description: string;
+}
+
 interface SystemNotification {
   id: string;
   timestamp: Date;
@@ -251,6 +266,23 @@ export default function App() {
   const [newProviderCuenta, setNewProviderCuenta] = useState<string>('');
   const [newProviderComision, setNewProviderComision] = useState<string>('4.0');
   const [isRegisteringProvider, setIsRegisteringProvider] = useState<boolean>(false);
+
+  // Editor de Página de Inicio
+  const [editorTab, setEditorTab] = useState<'hero' | 'politicas'>('hero');
+  const [landingConfig, setLandingConfig] = useState<LandingConfig>({
+    hero_title: 'Ecosistema Financiero Digital',
+    hero_description: 'Adquiere alimentos y víveres con descuento directo por nómina. Un sistema seguro, ágil y transparente diseñado exclusivamente para el personal docente y administrativo.',
+    portal_trabajador_title: 'Portal del Trabajador',
+    portal_trabajador_description: 'Diseñado para el personal docente, administrativo y de mantenimiento. Consulta tu saldo disponible, genera códigos QR de compra y visualiza tus cuotas de pago.',
+    portal_proveedor_title: 'Punto de Venta Proveedor',
+    portal_proveedor_description: 'Reservado para los comercios aliados autorizados (Víveres y Carnes). Procesa compras escaneando el QR dinámico de los trabajadores y verifica límites de crédito.',
+    portal_admin_title: 'Panel Administrativo',
+    portal_admin_description: 'Acceso para la directiva del Colegio. Configura límites masivos, registra nuevos trabajadores y comercios aliados, consulta nóminas y liquida pagos a comercios.',
+    politicas_financiamiento_title: 'Políticas de Financiamiento Escolar',
+    politicas_financiamiento_description: 'El personal afiliado cuenta con un límite automático del 50% de su salario. Las cuotas son cobradas a los 7 o 15 días directamente mediante deducción de nómina de la institución. No aplica recargo de interés moratorio, solo se indexa al tipo de cambio oficial del BCV del día de cobro.',
+    estabilidad_seguridad_title: 'Estabilidad y Seguridad de Datos',
+    estabilidad_seguridad_description: 'Todas las transacciones son atómicas, encriptadas y seguras. Al escanear el QR del trabajador, el punto de venta valida de forma automatizada y en tiempo real si la cuota generada se encuentra dentro del límite disponible y respeta la capacidad de endeudamiento saludable (máximo 30% del ingreso).'
+  });
 
   const fetchBcvRate = async () => {
     try {
@@ -419,6 +451,16 @@ export default function App() {
         .map(i => i.fecha_cobro);
       if (pendingDates.length > 0 && !payrollFilterDate) {
         setPayrollFilterDate(pendingDates[0]);
+      }
+
+      // 6. Configuración de la Página de Inicio
+      const { data: configData, error: configError } = await supabase
+        .from('configuracion_inicio')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+      if (!configError && configData) {
+        setLandingConfig(configData);
       }
     } catch (err: any) {
       console.error('Error fetching data:', err);
@@ -660,6 +702,26 @@ export default function App() {
       addNotification('error', 'Error al Sembrar', err.message || 'Fallo el restablecimiento de datos en el servidor');
     } finally {
       setIsSeeding(false);
+    }
+  };
+
+  // --- ADMIN: GUARDAR CONFIGURACIÓN DE PÁGINA DE INICIO ---
+  const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
+  const handleSaveLandingConfig = async () => {
+    setIsSavingConfig(true);
+    try {
+      const { error } = await supabase
+        .from('configuracion_inicio')
+        .update(landingConfig)
+        .eq('id', 1);
+      if (error) throw error;
+      addNotification('success', 'Configuración Guardada', 'Los textos de la página de inicio se han actualizado en el servidor.');
+      await fetchData();
+    } catch (err: any) {
+      console.error(err);
+      addNotification('error', 'Error al Guardar', err.message || 'No se pudo guardar la configuración en el servidor.');
+    } finally {
+      setIsSavingConfig(false);
     }
   };
 
@@ -1280,13 +1342,10 @@ export default function App() {
                   Plataforma Oficial BNPL
                 </span>
                 <h2 className="text-3xl md:text-4xl font-black tracking-tight leading-tight">
-                  Ecosistema Financiero Digital <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-[#90CAF9] to-[#D4AF37]">
-                    Colegio Rafael Castillo
-                  </span>
+                  {landingConfig.hero_title}
                 </h2>
                 <p className="text-slate-200 text-sm md:text-base font-medium leading-relaxed max-w-xl">
-                  Adquiere alimentos y víveres con descuento directo por nómina. Un sistema seguro, ágil y transparente diseñado exclusivamente para el personal docente y administrativo.
+                  {landingConfig.hero_description}
                 </p>
                 
                 {/* Status Pills */}
@@ -1347,9 +1406,9 @@ export default function App() {
                       <User size={26} className="text-inherit" />
                     </div>
                     <div className="space-y-2">
-                      <h4 className="text-base font-extrabold text-[#002855] transition-colors">Portal del Trabajador</h4>
+                      <h4 className="text-base font-extrabold text-[#002855] transition-colors">{landingConfig.portal_trabajador_title}</h4>
                       <p className="text-xs text-slate-500 leading-relaxed font-semibold">
-                        Diseñado para el personal docente, administrativo y de mantenimiento. Consulta tu saldo disponible, genera códigos QR de compra y visualiza tus cuotas de pago.
+                        {landingConfig.portal_trabajador_description}
                       </p>
                     </div>
                   </div>
@@ -1369,9 +1428,9 @@ export default function App() {
                       <ShoppingBag size={26} className="text-inherit" />
                     </div>
                     <div className="space-y-2">
-                      <h4 className="text-base font-extrabold text-[#002855] transition-colors">Punto de Venta Proveedor</h4>
+                      <h4 className="text-base font-extrabold text-[#002855] transition-colors">{landingConfig.portal_proveedor_title}</h4>
                       <p className="text-xs text-slate-500 leading-relaxed font-semibold">
-                        Reservado para los comercios aliados autorizados (Víveres y Carnes). Procesa compras escaneando el QR dinámico de los trabajadores y verifica límites de crédito.
+                        {landingConfig.portal_proveedor_description}
                       </p>
                     </div>
                   </div>
@@ -1391,9 +1450,9 @@ export default function App() {
                       <Sliders size={26} className="text-inherit" />
                     </div>
                     <div className="space-y-2">
-                      <h4 className="text-base font-extrabold text-[#002855] transition-colors">Panel Administrativo</h4>
+                      <h4 className="text-base font-extrabold text-[#002855] transition-colors">{landingConfig.portal_admin_title}</h4>
                       <p className="text-xs text-slate-500 leading-relaxed font-semibold">
-                        Acceso para la directiva del Colegio. Configura límites masivos, registra nuevos trabajadores y comercios aliados, consulta nóminas y liquida pagos a comercios.
+                        {landingConfig.portal_admin_description}
                       </p>
                     </div>
                   </div>
@@ -1408,15 +1467,15 @@ export default function App() {
             {/* Informative footer */}
             <div className="bg-slate-100 border border-slate-200 p-6 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-slate-600 font-semibold text-left">
               <div className="space-y-2">
-                <h5 className="font-extrabold text-[#002855] uppercase tracking-wider text-[10px]">Políticas de Financiamiento Escolar</h5>
+                <h5 className="font-extrabold text-[#002855] uppercase tracking-wider text-[10px]">{landingConfig.politicas_financiamiento_title}</h5>
                 <p className="leading-relaxed text-[11px]">
-                  El personal afiliado cuenta con un límite automático del 50% de su salario. Las cuotas son cobradas a los 7 o 15 días directamente mediante deducción de nómina de la institución. No aplica recargo de interés moratorio, solo se indexa al tipo de cambio oficial del BCV del día de cobro.
+                  {landingConfig.politicas_financiamiento_description}
                 </p>
               </div>
               <div className="space-y-2 border-t md:border-t-0 md:border-l border-slate-200 pt-4 md:pt-0 md:pl-6">
-                <h5 className="font-extrabold text-[#002855] uppercase tracking-wider text-[10px]">Estabilidad y Seguridad de Datos</h5>
+                <h5 className="font-extrabold text-[#002855] uppercase tracking-wider text-[10px]">{landingConfig.estabilidad_seguridad_title}</h5>
                 <p className="leading-relaxed text-[11px]">
-                  Todas las transacciones son atómicas, encriptadas y seguras. Al escanear el QR del trabajador, el punto de venta valida de forma automatizada y en tiempo real si la cuota generada se encuentra dentro del límite disponible y respeta la capacidad de endeudamiento saludable (máximo 30% del ingreso).
+                  {landingConfig.estabilidad_seguridad_description}
                 </p>
               </div>
             </div>
@@ -3136,6 +3195,188 @@ export default function App() {
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+
+                  {/* Editor de la Página de Inicio */}
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm text-left">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 border-b border-slate-100 pb-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Editor de Contenidos de la Página de Inicio</h4>
+                        <p className="text-xs text-slate-500 font-semibold mt-0.5">Modifica los textos principales de la landing page sin editar código.</p>
+                      </div>
+                      <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-600">
+                        <button
+                          type="button"
+                          onClick={() => setEditorTab('hero')}
+                          className={`px-3 py-1 rounded-md transition ${editorTab === 'hero' ? 'bg-[#002855] text-white shadow-sm' : 'text-slate-600 hover:text-[#002855]'}`}
+                        >
+                          Héroe & Portales
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditorTab('politicas')}
+                          className={`px-3 py-1 rounded-md transition ${editorTab === 'politicas' ? 'bg-[#002855] text-white shadow-sm' : 'text-slate-600 hover:text-[#002855]'}`}
+                        >
+                          Políticas & Footer
+                        </button>
+                      </div>
+                    </div>
+
+                    {editorTab === 'hero' ? (
+                      <div className="space-y-4">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block">Título Principal (Hero)</label>
+                          <input
+                            type="text"
+                            value={landingConfig.hero_title}
+                            onChange={(e) => setLandingConfig({ ...landingConfig, hero_title: e.target.value })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-bold"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block">Descripción del Héroe</label>
+                          <textarea
+                            rows={2}
+                            value={landingConfig.hero_description}
+                            onChange={(e) => setLandingConfig({ ...landingConfig, hero_description: e.target.value })}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-semibold"
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 pt-4">
+                          <div className="space-y-4">
+                            <span className="text-[10px] font-extrabold text-[#002855] uppercase tracking-wider">Módulo Trabajador</span>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase block">Título</label>
+                              <input
+                                type="text"
+                                value={landingConfig.portal_trabajador_title}
+                                onChange={(e) => setLandingConfig({ ...landingConfig, portal_trabajador_title: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-bold"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase block">Descripción</label>
+                              <textarea
+                                rows={3}
+                                value={landingConfig.portal_trabajador_description}
+                                onChange={(e) => setLandingConfig({ ...landingConfig, portal_trabajador_description: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-semibold"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-4 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-4">
+                            <span className="text-[10px] font-extrabold text-[#64B5F6] uppercase tracking-wider">Módulo Proveedor</span>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase block">Título</label>
+                              <input
+                                type="text"
+                                value={landingConfig.portal_proveedor_title}
+                                onChange={(e) => setLandingConfig({ ...landingConfig, portal_proveedor_title: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-bold"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase block">Descripción</label>
+                              <textarea
+                                rows={3}
+                                value={landingConfig.portal_proveedor_description}
+                                onChange={(e) => setLandingConfig({ ...landingConfig, portal_proveedor_description: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-semibold"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-4 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-4">
+                            <span className="text-[10px] font-extrabold text-[#E53935] uppercase tracking-wider">Panel Administrativo</span>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase block">Título</label>
+                              <input
+                                type="text"
+                                value={landingConfig.portal_admin_title}
+                                onChange={(e) => setLandingConfig({ ...landingConfig, portal_admin_title: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-bold"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase block">Descripción</label>
+                              <textarea
+                                rows={3}
+                                value={landingConfig.portal_admin_description}
+                                onChange={(e) => setLandingConfig({ ...landingConfig, portal_admin_description: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-semibold"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <span className="text-[10px] font-extrabold text-[#002855] uppercase tracking-wider">Políticas de Financiamiento</span>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase block">Título Sección</label>
+                              <input
+                                type="text"
+                                value={landingConfig.politicas_financiamiento_title}
+                                onChange={(e) => setLandingConfig({ ...landingConfig, politicas_financiamiento_title: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-bold"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase block">Descripción/Contenido</label>
+                              <textarea
+                                rows={4}
+                                value={landingConfig.politicas_financiamiento_description}
+                                onChange={(e) => setLandingConfig({ ...landingConfig, politicas_financiamiento_description: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-semibold"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-4 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6">
+                            <span className="text-[10px] font-extrabold text-[#002855] uppercase tracking-wider">Estabilidad & Seguridad de Datos</span>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase block">Título Sección</label>
+                              <input
+                                type="text"
+                                value={landingConfig.estabilidad_seguridad_title}
+                                onChange={(e) => setLandingConfig({ ...landingConfig, estabilidad_seguridad_title: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-bold"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase block">Descripción/Contenido</label>
+                              <textarea
+                                rows={4}
+                                value={landingConfig.estabilidad_seguridad_description}
+                                onChange={(e) => setLandingConfig({ ...landingConfig, estabilidad_seguridad_description: e.target.value })}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-semibold"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end border-t border-slate-100 pt-4 mt-4">
+                      <button
+                        type="button"
+                        onClick={handleSaveLandingConfig}
+                        disabled={isSavingConfig}
+                        className="bg-[#002855] hover:bg-[#073B73] text-white text-xs font-bold py-2.5 px-6 rounded-xl shadow transition flex items-center justify-center gap-1.5 disabled:opacity-50 animate-pulse-slow"
+                      >
+                        {isSavingConfig ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" />
+                            Guardando...
+                          </>
+                        ) : (
+                          <>
+                            <Check size={14} />
+                            Guardar Cambios de la Página de Inicio
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
 
