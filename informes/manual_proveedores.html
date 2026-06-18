@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guía de Uso CrediCRC - Comercios y Proveedores Aliados</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #002855;
+      --secondary: #D4AF37;
+      --text: #1e293b;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --success: #10b981;
+      --info: #0284c7;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background-color: var(--card-bg);
+      padding: 45px;
+      border-radius: 24px;
+      border: 1px solid var(--border);
+      box-shadow: 0 10px 30px rgba(0, 40, 85, 0.03);
+    }
+
+    header {
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 25px;
+      margin-bottom: 35px;
+      text-align: left;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .logo-badge {
+      background-color: var(--primary);
+      color: white;
+      font-weight: 800;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.1rem;
+    }
+
+    .logo-text {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      color: var(--primary);
+      font-size: 1.35rem;
+    }
+
+    .logo-text span {
+      color: #ef4444;
+    }
+
+    h1 {
+      font-family: 'Outfit', sans-serif;
+      color: var(--primary);
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1.25;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      font-size: 1rem;
+      color: #64748b;
+      font-weight: 500;
+    }
+
+    h2 {
+      font-family: 'Outfit', sans-serif;
+      color: var(--primary);
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-top: 30px;
+      margin-bottom: 15px;
+      background-color: #f1f5f9;
+      padding: 8px 15px;
+      border-radius: 10px;
+      display: inline-block;
+    }
+
+    p {
+      margin-bottom: 15px;
+      font-size: 0.95rem;
+      color: #334155;
+    }
+
+    /* Steps cards */
+    .step-card {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+      background-color: #fafbfc;
+      position: relative;
+    }
+
+    .step-number {
+      background-color: var(--secondary);
+      color: var(--primary);
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 0.9rem;
+      padding: 3px 10px;
+      border-radius: 8px;
+      display: inline-block;
+      margin-bottom: 12px;
+    }
+
+    .step-card h3 {
+      font-family: 'Outfit', sans-serif;
+      color: var(--primary);
+      font-size: 1.15rem;
+      margin-bottom: 10px;
+    }
+
+    ul {
+      margin-left: 20px;
+      margin-bottom: 15px;
+    }
+
+    li {
+      margin-bottom: 8px;
+      font-size: 0.9rem;
+      color: #334155;
+    }
+
+    .tip-box {
+      background-color: rgba(16, 185, 129, 0.05);
+      border-left: 4px solid var(--success);
+      padding: 15px;
+      border-radius: 10px;
+      margin: 15px 0;
+      font-size: 0.9rem;
+      color: #047857;
+      font-weight: 500;
+    }
+
+    .validation-box {
+      background-color: #fff;
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--success);
+      border-radius: 12px;
+      padding: 20px;
+      margin: 20px 0;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+    }
+
+    .validation-box h4 {
+      font-family: 'Outfit', sans-serif;
+      color: var(--success);
+      font-size: 1.1rem;
+      margin-bottom: 15px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .validation-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      font-size: 0.85rem;
+    }
+
+    .validation-grid div {
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 8px;
+    }
+
+    .validation-grid span {
+      color: #94a3b8;
+      font-weight: 600;
+      display: block;
+      font-size: 0.75rem;
+      margin-bottom: 2px;
+    }
+
+    .validation-grid strong {
+      color: var(--primary);
+      font-size: 0.95rem;
+    }
+
+    .footer-note {
+      margin-top: 45px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="logo-container">
+        <div class="logo-badge">CRC</div>
+        <div class="logo-text">Credi<span>CRC</span></div>
+      </div>
+      <h1>Guía de Uso de CrediCRC: Para Comercios y Proveedores Aliados</h1>
+      <span class="subtitle">Instrucciones sencillas para cobrar y liquidar compras con códigos QR</span>
+    </header>
+
+    <p>¡Bienvenido al ecosistema <strong>CrediCRC</strong>! Esta plataforma digital te permite vender víveres, carnes y productos de primera necesidad al personal de la institución con garantía de pago total respaldada por el colegio, sin requerir costosos puntos de venta físicos ni trámites complejos en tu establecimiento.</p>
+
+    <h2>Instrucciones Paso a Paso</h2>
+
+    <!-- Step 1 -->
+    <div class="step-card">
+      <span class="step-number">Paso 1</span>
+      <h3>Afiliación de tu Comercio</h3>
+      <p>Para registrar tu establecimiento comercial en el sistema:</p>
+      <ol style="margin-left: 20px; font-size: 0.9rem; color: #334155; margin-bottom: 12px;">
+        <li style="margin-bottom: 6px;">Ingresa a la página oficial: <strong><a href="https://credicrc.vercel.app" target="_blank">https://credicrc.vercel.app</a></strong></li>
+        <li style="margin-bottom: 6px;">Presiona el botón <strong>Módulo Proveedor</strong> (o haz clic en "Ingresar al Punto de Venta" en su respectiva tarjeta).</li>
+        <li style="margin-bottom: 6px;">Haz clic en la pestaña superior llamada <strong>"Registrarse"</strong>.</li>
+        <li style="margin-bottom: 6px;">Completa los datos de tu negocio: Nombre comercial de la tienda, Categoría (víveres o carnes) y tus datos de Cuenta Bancaria / Pago Móvil (donde el colegio te transferirá el dinero facturado).</li>
+        <li style="margin-bottom: 6px;">Registra tu correo comercial y crea tu clave.</li>
+        <li style="margin-bottom: 6px;">Haz clic en <strong>Enviar Solicitud de Registro</strong>.</li>
+      </ol>
+      <div class="tip-box">
+        <strong>Aprobación:</strong> El colegio revisará la solicitud y la activará desde su panel administrativo, definiendo la comisión acordada (entre 3% y 5% por servicio). Al activarse, podrás ingresar de inmediato.
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step-card">
+      <span class="step-number">Paso 2</span>
+      <h3>Ingreso al Punto de Venta (POS)</h3>
+      <p>Cada día, al abrir tu negocio o caja:</p>
+      <ol style="margin-left: 20px; font-size: 0.9rem; color: #334155;">
+        <li style="margin-bottom: 6px;">Entra a <strong><a href="https://credicrc.vercel.app" target="_blank">https://credicrc.vercel.app</a></strong> y ve a <strong>Módulo Proveedor</strong>.</li>
+        <li style="margin-bottom: 6px;">En la pestaña <strong>Iniciar Sesión</strong>, ingresa tu correo y contraseña.</li>
+        <li style="margin-bottom: 6px;">Verás directamente tu <strong>POS Digital</strong> en pantalla, listo para facturar.</li>
+      </ol>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step-card">
+      <span class="step-number">Paso 3</span>
+      <h3>Procesar un Cobro (Escanear Código QR)</h3>
+      <p>Cuando un cliente vaya a cancelar en tu caja con la plataforma:</p>
+      <ol style="margin-left: 20px; font-size: 0.9rem; color: #334155; margin-bottom: 15px;">
+        <li style="margin-bottom: 6px;">El cliente te mostrará un <strong>código QR</strong> activo en su teléfono.</li>
+        <li style="margin-bottom: 6px;">Haz clic en el botón azul destacado de tu panel: <strong>"Escanear / Detectar QR de Trabajador"</strong>.</li>
+        <li style="margin-bottom: 6px;">El sistema leerá el código automáticamente y evaluará si el cliente tiene saldo y capacidad de pago suficiente.</li>
+        <li style="margin-bottom: 6px;">Si el crédito es aprobado, verás la tarjeta verde en pantalla:</li>
+      </ol>
+
+      <div class="validation-box">
+        <h4>✓ Crédito Pre-Aprobado</h4>
+        <div class="validation-grid">
+          <div>
+            <span>CLIENTE</span>
+            <strong>María Alejandra Delgado</strong>
+          </div>
+          <div>
+            <span>MONTO TOTAL COMPRA</span>
+            <strong>$50.00 USD</strong>
+          </div>
+          <div>
+            <span>INICIAL A COBRAR EN CAJA</span>
+            <strong style="color: var(--success); font-family: monospace;">$15.00 USD</strong>
+          </div>
+          <div>
+            <span>MONTO A FINANCIAR</span>
+            <strong style="color: var(--primary); font-family: monospace;">$35.00 USD</strong>
+          </div>
+        </div>
+      </div>
+
+      <ol start="5" style="margin-left: 20px; font-size: 0.9rem; color: #334155;">
+        <li style="margin-bottom: 6px;"><strong>Cobra en caja el "Monto Inicial"</strong> en efectivo o pago móvil (si el cliente configuró inicial).</li>
+        <li style="margin-bottom: 6px;">Para concretar y registrar la venta, haz clic en el botón verde: <strong>"Procesar Venta y Crédito"</strong>.</li>
+        <li style="margin-bottom: 6px;">¡Listo! Se actualizará la pantalla y podrás entregar los productos de forma segura.</li>
+      </ol>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="step-card">
+      <span class="step-number">Paso 4</span>
+      <h3>Liquidación de tus Ventas</h3>
+      <p>Para llevar la contabilidad de tu negocio:</p>
+      <ul>
+        <li>En la parte inferior de tu POS, verás la tabla de <strong>"Ventas Recientes"</strong> con los detalles de tus facturaciones.</li>
+        <li>El colegio procesará quincenalmente la nómina del personal, recaudará los fondos y te transferirá el dinero acumulado de las compras a tu cuenta enlace bancaria.</li>
+        <li>Al monto a transferir se le descontará de forma automática el porcentaje de comisión del colegio (ej: 4% sobre el financiamiento) detallado en la tabla de conciliación.</li>
+      </ul>
+    </div>
+
+    <div class="footer-note">
+      <p>CrediCRC v1.4 &bull; Unidad Educativa Colegio Rafael Castillo</p>
+    </div>
+  </div>
+
+</body>
+</html>

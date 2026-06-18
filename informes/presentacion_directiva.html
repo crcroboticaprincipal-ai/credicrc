@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Presentación Proyecto CrediCRC</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #002855;
+      --primary-light: #0b3c70;
+      --secondary: #D4AF37;
+      --text-white: #ffffff;
+      --text-gray: #cbd5e1;
+      --bg-dark: #0f172a;
+      --card-bg: #1e293b;
+      --success: #10b981;
+      --danger: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-white);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* Slides container */
+    .slides-container {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      position: relative;
+    }
+
+    .slide {
+      background-color: var(--card-bg);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 28px;
+      padding: 40px;
+      width: 100%;
+      max-width: 900px;
+      height: 80vh;
+      max-height: 550px;
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+      position: absolute;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      opacity: 0;
+      transform: translateY(15px);
+      text-align: left;
+    }
+
+    .slide.active {
+      display: flex;
+      opacity: 1;
+      transform: translateY(0);
+      position: relative;
+    }
+
+    /* Slide Content Typography */
+    .slide-header {
+      margin-bottom: 25px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 15px;
+    }
+
+    .slide-subtitle {
+      color: var(--secondary);
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+    }
+
+    .slide h2 {
+      font-family: 'Outfit', sans-serif;
+      color: var(--text-white);
+      font-size: 2.1rem;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .slide h3 {
+      font-family: 'Outfit', sans-serif;
+      color: var(--secondary);
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-top: 15px;
+      margin-bottom: 20px;
+    }
+
+    .slide p {
+      font-size: 1.1rem;
+      color: var(--text-gray);
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+
+    .slide ul {
+      margin-left: 25px;
+      margin-bottom: 20px;
+    }
+
+    .slide li {
+      font-size: 1.05rem;
+      color: var(--text-gray);
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+
+    .slide strong {
+      color: var(--secondary);
+    }
+
+    /* Grid layout for slides content */
+    .slide-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+
+    @media (min-width: 768px) {
+      .slide-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .slide-card {
+      background-color: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+      padding: 20px;
+    }
+
+    .slide-card h4 {
+      font-family: 'Outfit', sans-serif;
+      color: var(--secondary);
+      font-size: 1.15rem;
+      margin-bottom: 8px;
+    }
+
+    .slide-card p {
+      font-size: 0.95rem;
+      margin-bottom: 0;
+    }
+
+    /* Footer & Controls */
+    .controls-bar {
+      background-color: var(--primary);
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      z-index: 10;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-badge {
+      background-color: var(--secondary);
+      color: var(--primary);
+      font-weight: 800;
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.9rem;
+    }
+
+    .logo-text {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 1.1rem;
+      letter-spacing: 0.5px;
+    }
+
+    .logo-text span {
+      color: var(--secondary);
+    }
+
+    .navigation {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .btn-nav {
+      background-color: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background-color 0.2s, transform 0.1s;
+      outline: none;
+    }
+
+    .btn-nav:hover {
+      background-color: var(--secondary);
+      color: var(--primary);
+    }
+
+    .btn-nav:active {
+      transform: scale(0.95);
+    }
+
+    #slide-counter {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--text-gray);
+      min-width: 50px;
+      text-align: center;
+    }
+
+    /* Decorative indicators at top */
+    .slide-indicators {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      padding: 20px 0 10px;
+    }
+
+    .indicator {
+      width: 30px;
+      height: 4px;
+      background-color: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      transition: background-color 0.3s;
+    }
+
+    .indicator.active {
+      background-color: var(--secondary);
+    }
+
+    .instructions-tip {
+      position: absolute;
+      bottom: 75px;
+      font-size: 0.75rem;
+      color: #64748b;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Slide Top Indicators -->
+  <div class="slide-indicators" id="indicators-container"></div>
+
+  <!-- Slides Container -->
+  <div class="slides-container">
+    
+    <!-- Slide 1 -->
+    <div class="slide active">
+      <div class="slide-header">
+        <span class="slide-subtitle">PROPUESTA DE BIENESTAR</span>
+        <h2>Proyecto CrediCRC</h2>
+      </div>
+      <h3>Ecosistema Financiero y de Bienestar Digital</h3>
+      <p>Una solución interna de financiamiento flexible "Compra Ahora, Paga Después" para el personal docente, administrativo y obrero del <strong>Colegio Rafael Castillo</strong>.</p>
+      <ul>
+        <li><strong>Financiamiento inmediato</strong> para alimentos básicos (Víveres y Carnes).</li>
+        <li><strong>Indexado al BCV</strong> oficial, cobrado directamente por nómina quincenal.</li>
+        <li><strong>Cero intereses moratorios</strong>, garantizando un crédito justo y de protección.</li>
+      </ul>
+    </div>
+
+    <!-- Slide 2 -->
+    <div class="slide">
+      <div class="slide-header">
+        <span class="slide-subtitle">DIAGNÓSTICO</span>
+        <h2>El Desafío Actual</h2>
+      </div>
+      <p>El personal escolar enfrenta dificultades de liquidez entre quincenas para adquirir la cesta alimentaria básica.</p>
+      <div class="slide-grid">
+        <div class="slide-card">
+          <h4>Acceso Limitado</h4>
+          <p>Los créditos comerciales externos tienen trabas o cobran recargos elevados por financiamiento.</p>
+        </div>
+        <div class="slide-card">
+          <h4>Falta de Control</h4>
+          <p>Los cobros y créditos informales son complicados de gestionar tanto para la institución como para los comercios.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 3 -->
+    <div class="slide">
+      <div class="slide-header">
+        <span class="slide-subtitle">CÓMO FUNCIONA</span>
+        <h2>Intermediación Tecnológica Inteligente</h2>
+      </div>
+      <p>El sistema se opera de forma digital mediante teléfonos celulares, sin necesidad de papeles ni trámites engorrosos:</p>
+      <ol style="margin-left: 25px; color: var(--text-gray); font-size: 1.05rem;">
+        <li style="margin-bottom: 12px;">El <strong>Trabajador</strong> genera un código QR de consumo en la web.</li>
+        <li style="margin-bottom: 12px;">El <strong>Comercio Aliado</strong> escanea el código en la caja desde su smartphone.</li>
+        <li style="margin-bottom: 12px;">La <strong>Directiva</strong> descuenta automáticamente la cuota de la quincena y transfiere el dinero al comercio.</li>
+      </ol>
+    </div>
+
+    <!-- Slide 4 -->
+    <div class="slide">
+      <div class="slide-header">
+        <span class="slide-subtitle">SALVAGUARDAS</span>
+        <h2>Seguridad y Reglas de Oro</h2>
+      </div>
+      <p>Para proteger el salario de nuestro personal y evitar deudas insostenibles, la base de datos restringe los consumos bajo dos candados:</p>
+      <div class="slide-grid">
+        <div class="slide-card border-l-4" style="border-left-color: var(--secondary);">
+          <h4>Límite de Consumo (50%)</h4>
+          <p>La deuda total acumulada del trabajador nunca podrá superar el <strong>50% de su salario base mensual</strong>.</p>
+        </div>
+        <div class="slide-card border-l-4" style="border-left-color: var(--secondary);">
+          <h4>Capacidad de Pago (30%)</h4>
+          <p>Ninguna cuota quincenal individual podrá exceder el <strong>15% de su sueldo base</strong> (30% mensual), protegiendo su liquidez diaria.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 5 -->
+    <div class="slide">
+      <div class="slide-header">
+        <span class="slide-subtitle">BENEFICIOS</span>
+        <h2>Una Relación Ganar - Ganar - Ganar</h2>
+      </div>
+      <div class="slide-grid">
+        <div class="slide-card">
+          <h4>Docentes y Personal</h4>
+          <p>Comida segura a crédito sin recargos ocultos, pagados de forma cómoda el día de su sueldo.</p>
+        </div>
+        <div class="slide-card">
+          <h4>Comercios locales</h4>
+          <p>Garantía total de pago respaldada por el colegio, sumando ventas y clientela cautiva.</p>
+        </div>
+        <div class="slide-card" style="grid-column: span 2;">
+          <h4>Unidad Educativa Colegio Rafael Castillo</h4>
+          <p>Retiene una comisión de servicio (3% al 5%) pagada por el comercio. Esto garantiza el mantenimiento del software y genera fondos para la institución.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 6 -->
+    <div class="slide">
+      <div class="slide-header">
+        <span class="slide-subtitle">ADMINISTRACIÓN</span>
+        <h2>Panel de Control Directivo</h2>
+      </div>
+      <p>La administración escolar cuenta con herramientas completas e intuitivas:</p>
+      <ul>
+        <li><strong>Aprobación de Usuarios:</strong> Control y registro de nuevos docentes y comercios que solicitan afiliarse.</li>
+        <li><strong>Conciliación de Cuentas:</strong> Cálculo automático del neto a pagar al comercio y la ganancia del colegio.</li>
+        <li><strong>Exportación de Nómina:</strong> Generación instantánea del archivo de descuentos listo para Excel.</li>
+        <li><strong>Editor de Contenidos:</strong> Cambia textos, títulos y políticas de la web con un botón.</li>
+      </ul>
+    </div>
+
+    <!-- Slide 7 -->
+    <div class="slide">
+      <div class="slide-header">
+        <span class="slide-subtitle">LANZAMIENTO</span>
+        <h2>Estado Operativo e Implementación</h2>
+      </div>
+      <p>El sistema se encuentra listo para su despliegue y uso:</p>
+      <ul>
+        <li><strong>Dirección Pública en Vivo:</strong> <a href="https://credicrc.vercel.app" target="_blank" style="color: var(--secondary); font-weight: 700;">credicrc.vercel.app</a></li>
+        <li><strong>Seguridad de Datos:</strong> Alojado en nube encriptada y con respaldos constantes.</li>
+        <li><strong>Piloto sugerido:</strong> Lanzamiento inicial con 2 comercios del municipio y 5 docentes para validar el circuito.</li>
+      </ul>
+    </div>
+
+    <!-- Help tip -->
+    <div class="instructions-tip">Usa las teclas de flecha ← y → de tu teclado para cambiar de diapositiva</div>
+  </div>
+
+  <!-- Bottom Navigation -->
+  <div class="controls-bar">
+    <div class="logo-container">
+      <div class="logo-badge">CRC</div>
+      <div class="logo-text">Credi<span>CRC</span></div>
+    </div>
+    
+    <div class="navigation">
+      <button class="btn-nav" onclick="prevSlide()">Anterior</button>
+      <span id="slide-counter">1 / 7</span>
+      <button class="btn-nav" onclick="nextSlide()">Siguiente</button>
+    </div>
+  </div>
+
+  <script>
+    let currentSlide = 0;
+    const slides = document.querySelectorAll('.slide');
+    const indicatorsContainer = document.getElementById('indicators-container');
+
+    // Generate indicators
+    slides.forEach((_, index) => {
+      const indicator = document.createElement('div');
+      indicator.className = `indicator ${index === 0 ? 'active' : ''}`;
+      indicator.onclick = () => showSlide(index);
+      indicatorsContainer.appendChild(indicator);
+    });
+
+    const indicators = document.querySelectorAll('.indicator');
+
+    function showSlide(index) {
+      if (index < 0 || index >= slides.length) return;
+      
+      slides[currentSlide].classList.remove('active');
+      indicators[currentSlide].classList.remove('active');
+      
+      currentSlide = index;
+      
+      slides[currentSlide].classList.add('active');
+      indicators[currentSlide].classList.add('active');
+      
+      document.getElementById('slide-counter').innerText = `${currentSlide + 1} / ${slides.length}`;
+    }
+
+    function nextSlide() {
+      if (currentSlide < slides.length - 1) {
+        showSlide(currentSlide + 1);
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlide > 0) {
+        showSlide(currentSlide - 1);
+      }
+    }
+
+    // Keyboard support
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight') nextSlide();
+      if (e.key === 'ArrowLeft') prevSlide();
+    });
+  </script>
+</body>
+</html>

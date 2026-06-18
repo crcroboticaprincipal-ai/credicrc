@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Informe Ejecutivo: Ecosistema Financiero CrediCRC</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #002855;
+      --secondary: #D4AF37;
+      --text: #1e293b;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 850px;
+      margin: 0 auto;
+      background-color: var(--card-bg);
+      padding: 50px;
+      border-radius: 24px;
+      border: 1px solid var(--border);
+      box-shadow: 0 10px 30px rgba(0, 40, 85, 0.04);
+    }
+
+    header {
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 30px;
+      margin-bottom: 40px;
+      text-align: left;
+    }
+
+    .logo-placeholder {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+
+    .logo-badge {
+      background-color: var(--primary);
+      color: white;
+      font-weight: 800;
+      padding: 10px 15px;
+      border-radius: 12px;
+      font-family: 'Outfit', sans-serif;
+      letter-spacing: 1px;
+      font-size: 1.2rem;
+    }
+
+    .logo-text {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      color: var(--primary);
+      font-size: 1.5rem;
+    }
+
+    .logo-text span {
+      color: var(--danger);
+    }
+
+    h1 {
+      font-family: 'Outfit', sans-serif;
+      color: var(--primary);
+      font-size: 2.2rem;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 15px;
+    }
+
+    .meta-info {
+      font-size: 0.9rem;
+      color: #64748b;
+      display: grid;
+      grid-template-cols: 1fr;
+      gap: 5px;
+      font-weight: 500;
+    }
+
+    .meta-info strong {
+      color: var(--primary);
+    }
+
+    h2 {
+      font-family: 'Outfit', sans-serif;
+      color: var(--primary);
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-top: 35px;
+      margin-bottom: 15px;
+      border-left: 4px solid var(--secondary);
+      padding-left: 12px;
+    }
+
+    p {
+      margin-bottom: 20px;
+      font-size: 1rem;
+      color: #334155;
+    }
+
+    ul, ol {
+      margin-bottom: 20px;
+      margin-left: 20px;
+    }
+
+    li {
+      margin-bottom: 10px;
+      font-size: 0.95rem;
+      color: #334155;
+    }
+
+    .highlight-box {
+      background-color: #f1f5f9;
+      border-left: 4px solid var(--primary);
+      padding: 20px;
+      border-radius: 12px;
+      margin: 25px 0;
+    }
+
+    .highlight-box h3 {
+      font-family: 'Outfit', sans-serif;
+      color: var(--primary);
+      margin-bottom: 10px;
+      font-size: 1.1rem;
+    }
+
+    .rule-card {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      margin: 15px 0;
+      background-color: #fafbfc;
+    }
+
+    .rule-card strong {
+      color: var(--primary);
+    }
+
+    .grid-benefits {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    @media (min-width: 768px) {
+      .grid-benefits {
+        grid-template-columns: 1fr 1fr;
+      }
+      .meta-info {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .benefit-item {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      padding: 20px;
+      border-radius: 16px;
+    }
+
+    .benefit-item h4 {
+      font-family: 'Outfit', sans-serif;
+      color: var(--primary);
+      margin-bottom: 10px;
+      font-size: 1.05rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-status {
+      display: inline-block;
+      background-color: var(--success);
+      color: white;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 10px;
+    }
+
+    .footer-note {
+      margin-top: 50px;
+      padding-top: 20px;
+      border-t: 1px solid var(--border);
+      text-align: center;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+
+    /* Print styling */
+    @media print {
+      body {
+        background-color: white;
+        padding: 0;
+      }
+      .container {
+        border: none;
+        box-shadow: none;
+        padding: 0;
+      }
+      .no-print {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="logo-placeholder">
+        <div class="logo-badge">CRC</div>
+        <div class="logo-text">Credi<span>CRC</span></div>
+      </div>
+      <h1>Informe de Presentación del Proyecto: Ecosistema Financiero CrediCRC</h1>
+      
+      <div class="meta-info">
+        <div><strong>Para:</strong> Equipo Directivo y Junta Administradora del Colegio Rafael Castillo</div>
+        <div><strong>Asunto:</strong> Plataforma Interna de Financiamiento ("Compra Ahora, Paga Después")</div>
+        <div><strong>Fecha:</strong> Junio de 2026</div>
+        <div><strong>Estatus del Sistema:</strong> <span class="badge-status">100% Operativo en Producción</span></div>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. Resumen Ejecutivo</h2>
+      <p><strong>CrediCRC</strong> es una solución digital de bienestar social diseñada exclusivamente para el personal docente, administrativo y obrero de nuestra institución. Consiste en una plataforma Fintech de financiamiento a corto plazo sin intereses cobrados por mora, indexada a la tasa oficial del Banco Central de Venezuela (BCV), que permite a los trabajadores adquirir alimentos de primera necesidad en comercios aliados y pagarlos cómodamente mediante descuento directo de nómina.</p>
+      <p>El sistema promueve una relación <strong>Ganar-Ganar-Ganar</strong> entre el colegio, el personal escolar y los comercios locales autorizados, garantizando transparencia, seguridad en el manejo de límites y automatización del proceso de nómina.</p>
+    </section>
+
+    <section>
+      <h2>2. El Desafío y la Oportunidad</h2>
+      <p>El personal escolar enfrenta dificultades económicas por la inflación y la pérdida del poder adquisitivo. Muchas veces requieren adquirir alimentos y víveres a crédito, lo cual suele acarrear recargos elevados o procesos de cobro informales y desgastantes.</p>
+      <p>Por otro lado, los comercios locales buscan clientes recurrentes pero temen asumir riesgos de impago.</p>
+      <div class="highlight-box">
+        <h3>CrediCRC resuelve esto al actuar como un intermediario tecnológico seguro:</h3>
+        <ol>
+          <li>El colegio respalda y automatiza la deducción del pago directamente del sueldo quincenal del trabajador.</li>
+          <li>El comercio vende con la garantía de cobro respaldada por la institución.</li>
+          <li>El trabajador obtiene comida sin pagar de más y sin endeudarse por encima de sus posibilidades reales.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. Funcionamiento General del Ecosistema</h2>
+      <p>El sistema funciona de manera enteramente digital a través de teléfonos inteligentes y computadoras, sin necesidad de instalar aplicaciones pesadas. El flujo es simple:</p>
+      <p>El <strong>trabajador</strong> genera un código QR de compra. El <strong>comercio aliado</strong> escanea ese código en su punto de venta digital, lo cual valida de forma automática el límite y aprueba la compra. Finalmente, la <strong>directiva del colegio</strong> procesa la nómina quincenal, deduce los pagos y liquida el monto neto al comercio.</p>
+      
+      <h3>Reglas de Seguridad Financiera Integradas:</h3>
+      <p>Para proteger el sueldo del trabajador y evitar el sobreendeudamiento, el sistema cuenta con dos candados financieros automáticos:</p>
+      
+      <div class="rule-card">
+        <p><strong>Límite Máximo de Crédito (Regla del 50%)</strong>: Por defecto, un trabajador solo puede tener una deuda total acumulada equivalente al <strong>50% de su salario mensual base</strong>. Por ejemplo, si gana $300, su saldo de financiamiento máximo será de $150.</p>
+      </div>
+      
+      <div class="rule-card">
+        <p><strong>Capacidad de Pago Saludable (Regla del 30%)</strong>: Ninguna quincena individual a cobrar puede superar el <strong>15% de su sueldo base</strong> (es decir, el 30% del salario mensual sumando ambas quincenas). Esto garantiza que el trabajador mantenga liquidez para otros gastos básicos del hogar.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. Beneficios del Ecosistema</h2>
+      <div class="grid-benefits">
+        <div class="benefit-item">
+          <h4>A. Para la Institución</h4>
+          <p>Ofrece un beneficio tangible al personal. Además, el colegio retiene una comisión de servicio (del 3% al 5%) sobre la venta total de los comercios aliados para sufragar gastos operativos del software. La directiva gestiona todo desde su panel de control privado.</p>
+        </div>
+        <div class="benefit-item">
+          <h4>B. Para los Trabajadores</h4>
+          <p>Acceso inmediato a alimentos sin recargos de intereses por financiamiento. Las deudas se cotizan en dólares pero se descuentan en Bolívares convertidos exactamente al tipo de cambio oficial del BCV del día de cobro.</p>
+        </div>
+        <div class="benefit-item">
+          <h4>C. Para los Comercios Aliados</h4>
+          <p>Garantiza un incremento en sus ventas con clientela cautiva. No asumen riesgos de pérdida ya que el colegio respalda los pagos. Usan su propio smartphone como punto de venta escaneando los códigos QR.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>5. Privacidad y Seguridad del Sistema</h2>
+      <p>La privacidad es un pilar fundamental del proyecto. El sistema ha sido optimizado con los siguientes lineamientos:</p>
+      <ul>
+        <li><strong>Cuentas Inactivas por Defecto:</strong> Cualquier usuario nuevo que se registre debe ser aprobado explícitamente por el administrador antes de poder acceder al sistema.</li>
+        <li><strong>Ocultación de Infraestructuras:</strong> No se muestra ningún dato técnico sobre servidores, bases de datos o proveedores de hosting en la interfaz.</li>
+        <li><strong>Seguridad en Simulación:</strong> Los controles de simulación y restablecimiento del sistema están protegidos bajo autenticación estricta en el panel administrativo del colegio.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>6. Estado Técnico del Proyecto</h2>
+      <ul>
+        <li><strong>Dirección Web Pública (En línea):</strong> <a href="https://credicrc.vercel.app" target="_blank">https://credicrc.vercel.app</a></li>
+        <li><strong>Código de Resguardo en GitHub:</strong> <a href="https://github.com/crcroboticaprincipal-ai/credicrc.git" target="_blank">Repositorio Oficial</a></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>7. Plan de Adopción Recomendado</h2>
+      <p>Para el lanzamiento oficial, se sugiere seguir estos tres pasos:</p>
+      <ol>
+        <li><strong>Afiliación de Comercios:</strong> Invitar a los comercios seleccionados a registrarse desde la web y aprobarlos en el panel asignando su respectiva comisión.</li>
+        <li><strong>Registro de Trabajadores:</strong> Pedir a los docentes y administrativos que ingresen a la plataforma y completen el registro de su cuenta desde sus teléfonos.</li>
+        <li><strong>Activación de Nómina:</strong> El administrador aprueba las solicitudes en el panel ingresando los salarios base reales para activar sus límites de consumo.</li>
+      </ol>
+    </section>
+
+    <div class="footer-note">
+      <p>CrediCRC v1.4 &bull; Ecosistema Fintech para el Colegio Rafael Castillo</p>
+    </div>
+  </div>
+
+</body>
+</html>
