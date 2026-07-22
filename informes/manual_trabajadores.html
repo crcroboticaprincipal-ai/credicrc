@@ -270,11 +270,52 @@
     <!-- Step 3 -->
     <div class="step-card">
       <span class="step-number">Paso 3</span>
-      <h3>Conoce tu Tarjeta de Crédito Digital</h3>
-      <p>Al ingresar, verás tu panel personal con una tarjeta azul que refleja tus límites de compra calculados en base a tu sueldo:</p>
+      <h3>Conoce tu Tarjeta de Crédito Digital y Nivel de Crédito</h3>
+      <p>Al ingresar, verás tu panel personal con tu **Nivel de Crédito**. CrediCRC premia tu responsabilidad de pago con mejores beneficios mediante **4 Niveles de Crédito**:</p>
       
+      <table style="width:100%; border-collapse: collapse; margin: 15px 0; font-size: 0.85rem; border: 1px solid var(--border);">
+        <thead>
+          <tr style="background-color: var(--primary); color: white;">
+            <th style="padding: 8px 12px; border: 1px solid var(--border); text-align: left;">Nivel</th>
+            <th style="padding: 8px 12px; border: 1px solid var(--border); text-align: left;">Estatus</th>
+            <th style="padding: 8px 12px; border: 1px solid var(--border); text-align: left;">Inicial Requerida</th>
+            <th style="padding: 8px 12px; border: 1px solid var(--border); text-align: left;">Límite por Quincena</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>Nivel 1</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);">Básico</td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>40% de la compra</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>15.0%</strong> del sueldo quincenal</td>
+          </tr>
+          <tr style="background-color: #f8fafc;">
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>Nivel 2</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);">Confiable</td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>35% de la compra</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>16.5%</strong> del sueldo quincenal</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>Nivel 3</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);">Preferente</td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>30% de la compra</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>18.5%</strong> del sueldo quincenal</td>
+          </tr>
+          <tr style="background-color: #f8fafc;">
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>Nivel 4</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);">Élite</td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>20% de la compra</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>20.0%</strong> del sueldo quincenal</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="tip-box" style="background-color: rgba(2, 132, 199, 0.05); border-left-color: var(--info); color: #0369a1; margin-bottom: 20px;">
+        <strong>¿Cómo subir de nivel?</strong> El sistema evalúa tu puntualidad automáticamente. Pagar a tiempo tus quincenas te hace subir de nivel, reduciendo la inicial en caja y aumentando tu capacidad quincenal de compra. Si te retrasas en tus pagos, tu código QR se bloqueará temporalmente por seguridad, reactivándose de inmediato al ponerte al día o subir de nivel.
+      </div>
+
       <div class="card-visual">
-        <h4>Docente de Primaria</h4>
+        <h4>Docente de Primaria (Nivel 2)</h4>
         <div class="title">María Alejandra Delgado</div>
         <div style="font-size: 0.75rem; opacity: 0.8; font-family: monospace;">CI: V-12.345.678</div>
         
@@ -285,37 +326,35 @@
           </div>
           <div class="grid-item">
             <span>CUPO TOTAL</span>
-            <strong>$175.00</strong>
+            <strong>$115.50</strong>
           </div>
           <div class="grid-item">
             <span>DISPONIBLE</span>
-            <strong style="color: var(--secondary);">$175.00</strong>
+            <strong style="color: var(--secondary);">$115.50</strong>
           </div>
         </div>
       </div>
 
       <ul>
         <li><strong>Sueldo Base:</strong> Tu salario base mensual registrado en el colegio.</li>
-        <li><strong>Cupo Total:</strong> El monto máximo total que el sistema te permite financiar (equivale al <strong>50% de tu sueldo base</strong>).</li>
-        <li><strong>Cupo Disponible:</strong> La cantidad de dinero que tienes libre en este momento para gastar. Disminuye al comprar y se recupera cuando el colegio te cobra las cuotas de nómina correspondientes.</li>
+        <li><strong>Cupo Total:</strong> El monto máximo total que el sistema te permite financiar según tu nivel actual.</li>
+        <li><strong>Cupo Disponible:</strong> La cantidad de dinero que tienes libre en este momento para gastar. Disminuye al comprar y se recupera cuando el colegio descuenta las cuotas de nómina correspondientes.</li>
       </ul>
     </div>
 
     <!-- Step 4 -->
     <div class="step-card">
       <span class="step-number">Paso 4</span>
-      <h3>Cómo comprar en el Comercio (Generar tu Código QR)</h3>
-      <p>Cuando vayas a cancelar en la caja de la carnicería o abasto aliado, haz lo siguiente en tu celular:</p>
+      <h3>Cómo comprar en el Comercio (Generar tu Código QR de Identidad)</h3>
+      <p>Para mayor comodidad, **tú no necesitas ingresar montos ni calcular iniciales en tu teléfono**. El proceso es el siguiente:</p>
       <ol style="margin-left: 20px; font-size: 0.9rem; color: #334155; margin-bottom: 12px;">
-        <li style="margin-bottom: 6px;">En el recuadro <strong>"Nueva Compra"</strong> de tu panel, ingresa el <strong>Monto de la Compra</strong> en dólares (ej. <em>$50</em>).</li>
-        <li style="margin-bottom: 6px;">Si deseas dar un abono en efectivo en la caja, ingrésalo en **Pago Inicial** (ej. <em>$15</em>). Si no vas a abonar nada, déjalo en <em>$0</em>.</li>
-        <li style="margin-bottom: 6px;">Selecciona los **Días de Financiamiento** (7 o 15 días, según acuerdes).</li>
-        <li style="margin-bottom: 6px;">Revisa el desglose automático (monto financiado y su equivalente en Bolívares según la tasa BCV).</li>
-        <li style="margin-bottom: 6px;">Haz clic en el botón verde **"Generar QR CrediCRC"**.</li>
-        <li style="margin-bottom: 6px;">Se abrirá un modal con un código QR. Muéstralo al cajero del comercio. Este código expira en 5 minutos por tu seguridad.</li>
+        <li style="margin-bottom: 6px;">En el recuadro <strong>"Mi Código de Identificación"</strong> de tu panel, haz clic en el botón verde <strong>"Generar Código QR de Identidad"</strong>.</li>
+        <li style="margin-bottom: 6px;">Se abrirá un modal con tu código QR dinámico. Muestra este código al cajero. El código expira en 5 minutos por seguridad.</li>
+        <li style="margin-bottom: 6px;">El cajero escaneará tu código e ingresará el monto total de la venta en su punto de venta digital. El sistema calculará la inicial en base a tu nivel de crédito y te la indicará en pantalla.</li>
+        <li style="margin-bottom: 6px;">Cobra en caja la inicial indicada (en divisas o bolívares según la tasa oficial del BCV). Una vez que el comercio reciba la inicial y confirme la venta, tu cupo disponible se actualizará y podrás retirar tu mercancía.</li>
       </ol>
-      <div class="tip-box" style="background-color: rgba(245, 158, 11, 0.05); border-left-color: var(--warning); color: #b45309;">
-        <strong>Tip:</strong> Si cierras la ventana del QR para revisar algo, no te preocupes. Aparecerá un botón llamado "Ver Código QR Activo" debajo de la compra para que puedas volver a mostrarlo sin volver a generarlo.
+      <div class="tip-box" style="background-color: rgba(2, 132, 199, 0.05); border-left-color: var(--info); color: #0369a1;">
+        <strong>Tip:</strong> Si necesitas cerrar el modal del QR temporalmente, puedes volver a mostrarlo en cualquier momento haciendo clic en el botón azul **"Ver Código QR Activo"** en tu panel principal sin volver a generarlo.
       </div>
     </div>
 

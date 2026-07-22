@@ -268,17 +268,54 @@
     <section>
       <h2>3. Funcionamiento General del Ecosistema</h2>
       <p>El sistema funciona de manera enteramente digital a través de teléfonos inteligentes y computadoras, sin necesidad de instalar aplicaciones pesadas. El flujo es simple:</p>
-      <p>El <strong>trabajador</strong> genera un código QR de compra. El <strong>comercio aliado</strong> escanea ese código en su punto de venta digital, lo cual valida de forma automática el límite y aprueba la compra. Finalmente, la <strong>directiva del colegio</strong> procesa la nómina quincenal, deduce los pagos y liquida el monto neto al comercio.</p>
+      <p>El <strong>trabajador</strong> genera un código QR de identidad en su celular (válido por 5 minutos). El <strong>comercio aliado</strong> escanea ese código en su punto de venta digital e ingresa el monto total de la venta. El <strong>sistema</strong> calcula el monto sugerido de inicial y valida la capacidad quincenal de compra. El comercio cobra la inicial en caja en divisas o bolívares (BCV), y finalmente la <strong>directiva del colegio</strong> descuenta el saldo neto de la nómina y lo liquida al comercio.</p>
       
-      <h3>Reglas de Seguridad Financiera Integradas:</h3>
-      <p>Para proteger el sueldo del trabajador y evitar el sobreendeudamiento, el sistema cuenta con dos candados financieros automáticos:</p>
+      <h3>Reglas de Seguridad Financiera y Gamificación:</h3>
+      <p>Para proteger el sueldo del trabajador y evitar el sobreendeudamiento, se implementa un sistema de <strong>4 Niveles de Crédito</strong> dinámicos:</p>
       
+      <table style="width:100%; border-collapse: collapse; margin: 15px 0; font-size: 0.85rem; border: 1px solid var(--border);">
+        <thead>
+          <tr style="background-color: var(--primary); color: white;">
+            <th style="padding: 8px 12px; border: 1px solid var(--border); text-align: left;">Nivel de Crédito</th>
+            <th style="padding: 8px 12px; border: 1px solid var(--border); text-align: left;">Rango / Estatus</th>
+            <th style="padding: 8px 12px; border: 1px solid var(--border); text-align: left;">Monto de Inicial Sugerido</th>
+            <th style="padding: 8px 12px; border: 1px solid var(--border); text-align: left;">Límite de Consumo Quincenal</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>Nivel 1</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);">Básico</td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>40% de la compra</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>15.0%</strong> del salario quincenal</td>
+          </tr>
+          <tr style="background-color: #f8fafc;">
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>Nivel 2</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);">Confiable</td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>35% de la compra</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>16.5%</strong> del salario quincenal</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>Nivel 3</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);">Preferente</td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>30% de la compra</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>18.5%</strong> del salario quincenal</td>
+          </tr>
+          <tr style="background-color: #f8fafc;">
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>Nivel 4</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);">Élite</td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>20% de la compra</strong></td>
+            <td style="padding: 8px 12px; border: 1px solid var(--border);"><strong>20.0%</strong> del salario quincenal</td>
+          </tr>
+        </tbody>
+      </table>
+
       <div class="rule-card">
-        <p><strong>Límite Máximo de Crédito (Regla del 50%)</strong>: Por defecto, un trabajador solo puede tener una deuda total acumulada equivalente al <strong>50% de su salario mensual base</strong>. Por ejemplo, si gana $300, su saldo de financiamiento máximo será de $150.</p>
+        <p><strong>Mecánica de Progresión</strong>: Al realizar los pagos quincenales de forma puntual, el trabajador acumula puntos para subir de nivel de forma automática. Subir de nivel premia al trabajador reduciendo la inicial exigida en caja y subiendo su capacidad de crédito financiado.</p>
       </div>
       
-      <div class="rule-card">
-        <p><strong>Capacidad de Pago Saludable (Regla del 30%)</strong>: Ninguna quincena individual a cobrar puede superar el <strong>15% de su sueldo base</strong> (es decir, el 30% del salario mensual sumando ambas quincenas). Esto garantiza que el trabajador mantenga liquidez para otros gastos básicos del hogar.</p>
+      <div class="rule-card" style="border-left-color: var(--danger);">
+        <p><strong>Bloqueo Automático por Mora</strong>: Si un trabajador presenta una cuota atrasada de nómina o conciliación, el sistema bloquea inmediatamente su código QR por seguridad. La reactivación se produce automáticamente en tiempo real al liquidar su saldo vencido o subir de nivel.</p>
       </div>
     </section>
 
@@ -287,26 +324,27 @@
       <div class="grid-benefits">
         <div class="benefit-item">
           <h4>A. Para la Institución</h4>
-          <p>Ofrece un beneficio tangible al personal. Además, el colegio retiene una comisión de servicio (del 3% al 5%) sobre la venta total de los comercios aliados para sufragar gastos operativos del software. La directiva gestiona todo desde su panel de control privado.</p>
+          <p>Apoyo social controlado. El colegio acumula comisiones del 3% al 5% mensualmente para la sostenibilidad del software. La directiva gestiona proveedores en el Panel Admin (CRUD, edición de tasas y cuentas bancarias, con eliminación segura para proteger la BD) y exporta la nómina en un solo clic.</p>
         </div>
         <div class="benefit-item">
           <h4>B. Para los Trabajadores</h4>
-          <p>Acceso inmediato a alimentos sin recargos de intereses por financiamiento. Las deudas se cotizan en dólares pero se descuentan en Bolívares convertidos exactamente al tipo de cambio oficial del BCV del día de cobro.</p>
+          <p>Alimentos a crédito sin intereses de financiamiento. Indexación justa (tasa BCV oficial) pagada en Bolívares. Mayor facilidad con el QR de identificación de un solo botón que no requiere rellenar datos al momento de comprar.</p>
         </div>
         <div class="benefit-item">
           <h4>C. Para los Comercios Aliados</h4>
-          <p>Garantiza un incremento en sus ventas con clientela cautiva. No asumen riesgos de pérdida ya que el colegio respalda los pagos. Usan su propio smartphone como punto de venta escaneando los códigos QR.</p>
+          <p>Cobro garantizado por el descuento de nómina. POS virtual con el switch de inicial (Aplica Inicial / Inicial Cero). Pestaña de Reporte Financiero para conciliar ventas del mes, ver la comisión a transferir al colegio e instrucciones de pago.</p>
         </div>
       </div>
     </section>
 
     <section>
       <h2>5. Privacidad y Seguridad del Sistema</h2>
-      <p>La privacidad es un pilar fundamental del proyecto. El sistema ha sido optimizado con los siguientes lineamientos:</p>
+      <p>La seguridad informática y la experiencia de usuario se han blindado con los siguientes lineamientos:</p>
       <ul>
-        <li><strong>Cuentas Inactivas por Defecto:</strong> Cualquier usuario nuevo que se registre debe ser aprobado explícitamente por el administrador antes de poder acceder al sistema.</li>
-        <li><strong>Ocultación de Infraestructuras:</strong> No se muestra ningún dato técnico sobre servidores, bases de datos o proveedores de hosting en la interfaz.</li>
-        <li><strong>Seguridad en Simulación:</strong> Los controles de simulación y restablecimiento del sistema están protegidos bajo autenticación estricta en el panel administrativo del colegio.</li>
+        <li><strong>Aprobación de Cuentas:</strong> Todo registro nuevo de trabajador o proveedor se crea inactivo por defecto y requiere aprobación explícita de la directiva.</li>
+        <li><strong>Ocultación de Infraestructuras:</strong> Mensajes de error informativos limpios sin filtraciones técnicas sobre bases de datos o servicios de hosting en la UI.</li>
+        <li><strong>Foco Móvil Optimizado:</strong> Corrección en el formulario de login para mantener el foco activo en el cursor al desplegarse el teclado en smartphones.</li>
+        <li><strong>Seguridad de Simulación:</strong> Las herramientas de simulación del administrador requieren autorización y están limitadas a entornos controlados.</li>
       </ul>
     </section>
 

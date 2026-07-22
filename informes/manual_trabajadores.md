@@ -32,24 +32,35 @@ Una vez aprobado por el colegio:
 
 ---
 
-## Paso 3: Entendiendo tu Dashboard (Tu Tarjeta Digital)
-En tu panel verás una tarjeta de crédito digital con tus datos y tres números muy importantes:
-1.  **Sueldo Mensual Base**: El salario que tienes registrado en el colegio.
-2.  **Cupo Total de Crédito**: El monto máximo que puedes adeudar en total (equivale al **50% de tu sueldo base**).
-3.  **Cupo Disponible**: El dinero que tienes libre en este momento para realizar compras. Se reduce cuando compras y se restablece cuando el colegio procesa los cobros de nómina.
+## Paso 3: Entendiendo tu Dashboard (Niveles de Crédito y Tarjeta Digital)
+En tu panel verás tu tarjeta de crédito digital y tu **Nivel de Crédito**. CrediCRC premia tu puntualidad de pago con mejores beneficios mediante **4 Niveles de Crédito**:
 
-Debajo verás tus **próximas cuotas de pago** en Bolívares, calculadas de forma justa con la tasa oficial del día del Banco Central de Venezuela (BCV), y tu historial de compras recientes.
+| Nivel | Rango / Estatus | Inicial Requerida en Caja | Límite por Quincena |
+| :--- | :--- | :--- | :--- |
+| **Nivel 1** | Básico | **40% de la compra** | **15.0%** de tu sueldo quincenal |
+| **Nivel 2** | Confiable | **35% de la compra** | **16.5%** de tu sueldo quincenal |
+| **Nivel 3** | Preferente | **30% de la compra** | **18.5%** de tu sueldo quincenal |
+| **Nivel 4** | Élite | **20% de la compra** | **20.0%** de tu sueldo quincenal |
+
+### ¿Cómo subir de nivel y obtener beneficios?
+*   **Ascenso:** Cada vez que pagas tus cuotas quincenales de forma puntual, acumulas puntos para subir de nivel. Subir de nivel te permite pagar menos inicial en la caja del comercio y contar con más cupo de financiamiento por quincena.
+*   **Penalización por Mora (Bloqueo):** Si tienes una cuota atrasada en nómina o conciliación, el sistema aplicará un **bloqueo automático** de seguridad a tu código QR. No podrás generar códigos de compra hasta ponerte al día. Al liquidar tu saldo vencido o subir de nivel, el código QR se reactivará automáticamente.
+
+Tu tarjeta digital te mostrará en tiempo real:
+1.  **Sueldo Mensual Base:** El salario que tienes registrado en el colegio.
+2.  **Cupo Total de Crédito:** El monto máximo total que el sistema te permite financiar según tu nivel actual.
+3.  **Cupo Disponible:** El saldo libre que tienes en este momento para compras. Se reduce al comprar y se restablece cuando el colegio procesa los descuentos de nómina.
 
 ---
 
-## Paso 4: Cómo comprar en los Comercios Aliados (Generar tu código QR)
-Cuando estés en el comercio (víveres o carnes) y vayas a pagar:
-1.  En tu panel, localiza el cuadro llamado **"Nueva Compra"**.
-2.  Ingresa el **Monto de Compra** en dólares (ej. *80*).
-3.  Ingresa el **Pago Inicial** en dólares (el dinero en efectivo o pago móvil que vas a abonar al comercio en ese instante, ej. *20*). Si no vas a dar inicial, coloca *0*.
-4.  Selecciona los **Días de Financiamiento** (7 o 15 días, según el acuerdo de cobro).
-5.  Verás un desglose automático con el monto que vas a financiar y su equivalente en Bolívares.
-6.  Haz clic en **Generar QR CrediCRC**.
-7.  Aparecerá una ventana con un **código QR** en pantalla. Este código tiene una validez de **5 minutos** por seguridad.
-8.  Muestra ese código QR al encargado de la caja en el establecimiento comercial para que lo escanee desde su dispositivo.
-9.  ¡Listo! El comercio conrfirmará la transacción y tu **Cupo Disponible** se actualizará de inmediato. Puedes presionar "Ocultar QR" para volver a tu panel.
+## Paso 4: Cómo comprar en los Comercios Aliados (Generar tu código QR de Identidad)
+Para mayor comodidad y seguridad, **tú no necesitas ingresar el monto de la compra ni calcular la inicial en tu teléfono**. El proceso es sumamente sencillo:
+
+1.  Cuando estés en la caja del comercio aliado y conozcas el total a pagar, entra a tu portal y localiza el cuadro llamado **"Mi Código de Identificación"**.
+2.  Haz clic en el botón verde **"Generar Código QR de Identidad"**.
+3.  Aparecerá en pantalla tu código QR dinámico. Por razones de seguridad, este código tiene una **validez temporal de 5 minutos**. Si expira, puedes presionar "Generar Nuevo QR".
+4.  Muestra este código QR desde tu celular al cajero del comercio.
+5.  El cajero escaneará tu código con la cámara de su dispositivo e ingresará el monto total de la venta en su punto de venta digital. El sistema calculará automáticamente la inicial en base a tu **Nivel de Crédito** y te indicará cuánto pagar en efectivo/pago móvil en ese momento.
+6.  Una vez que el comercio reciba tu inicial en caja y confirme la venta, verás reflejada la transacción en tu portal al instante y tu **Cupo Disponible** se actualizará.
+7.  Si necesitas cerrar el modal del QR y luego volver a mostrarlo al cajero, puedes hacer clic en el botón azul **"Ver Código QR Activo"** en tu panel principal sin necesidad de volver a crearlo.
+

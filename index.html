@@ -2,14 +2,43 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/favicon.ico.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CrediCRC - Compra Ahora, Paga Después | Colegio Rafael Castillo</title>
     <meta name="description" content="Plataforma interna de financiamiento y descuento por nómina (Buy Now, Pay Later) para el personal docente, administrativo y obrero del Colegio Rafael Castillo. Adquiere carnes y víveres con comodidad y seguridad." />
-    <meta name="theme-color" content="#002855" />
+
+    <!-- ── PWA Theme & Manifest ─────────────────────────────────────────── -->
+    <meta name="theme-color" content="#00A2E8" />
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- ── iOS / Safari PWA Support ────────────────────────────────────── -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="CrediCRC" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+
+    <!-- ── Microsoft Tiles ──────────────────────────────────────────────── -->
+    <meta name="msapplication-TileColor" content="#00A2E8" />
+    <meta name="msapplication-TileImage" content="/logo.png" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- ── Service Worker Registration (Solo producción) ────────────────── -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker
+            .register('/sw.js', { scope: '/' })
+            .then(function (registration) {
+              console.log('[CrediCRC] Service Worker registrado correctamente. Scope:', registration.scope);
+            })
+            .catch(function (error) {
+              console.warn('[CrediCRC] Registro de Service Worker fallido (no crítico):', error);
+            });
+        });
+      }
+    </script>
   </body>
 </html>

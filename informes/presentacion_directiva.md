@@ -31,44 +31,42 @@ El personal escolar (docentes, administrativos, obreros) enfrenta dificultades d
 # Diapositiva 3: La Solución CrediCRC
 ## Intermediación Tecnológica Inteligente
 
-CrediCRC actúa como un puente digital entre la institución, el trabajador y los comercios autorizados.
+CrediCRC actúa como un puente digital simplificado entre la institución, el personal escolar y los comercios locales autorizados:
 
-*   **Comodidad:** El trabajador compra usando su teléfono mediante un código QR seguro.
-*   **Garantía:** El comercio vende con la certeza de que el colegio deducirá el monto de la nómina.
-*   **Deducción Automática:** El colegio consolida las cuentas quincenalmente y las descuenta directamente del salario.
+*   **QR de Identidad:** El trabajador genera su código QR de identificación temporal en un clic (válido por 5 minutos).
+*   **POS Flexible:** El comercio escanea el QR, ingresa el monto total de venta y el sistema calcula la inicial requerida según el nivel del cliente.
+*   **Deducción y Garantía:** El colegio deduce quincenalmente la cuota correspondiente y realiza el pago consolidado al comercio.
 
 <!-- slide -->
 
-# Diapositiva 4: Seguridad y Reglas de Oro
-## Cuidado Integral del Salario
+# Diapositiva 4: Reglas de Oro y Gamificación
+## 4 Niveles de Crédito Dinámicos
 
-Para evitar el sobreendeudamiento de nuestro personal, el sistema opera bajo estrictos parámetros automáticos:
+Reemplazamos límites fijos por un sistema que premia el comportamiento de pago responsable:
 
-1.  **Límite Máximo de Crédito (Regla del 50%)**: 
-    La deuda total no puede superar el **50% del salario base mensual** del trabajador.
-2.  **Capacidad de Pago Saludable (Regla del 30%)**: 
-    La cuota individual quincenal a descontar no puede exceder el **15% del sueldo base** (tope de 30% mensual), garantizando liquidez para el hogar.
+*   **Progreso de Niveles:** 4 Niveles (Básico, Confiable, Preferente, Élite). A mejor comportamiento, sube el nivel, disminuye la inicial requerida (del 40% al 20%) y sube el límite financiado (del 15% al 20% del sueldo quincenal).
+*   **Bloqueo Preventivo (Mora):** En caso de retraso en los pagos, el sistema bloquea inmediatamente la generación de QR. Al ponerse al día o subir de nivel, se desbloquea en tiempo real.
 
 <!-- slide -->
 
 # Diapositiva 5: Beneficios del Proyecto
-## Una Relación Ganar-Ganar-Ganar
+## Transparencia y Sostenibilidad
 
-*   **Para el Trabajador:** Acceso inmediato a comida sin recargo de intereses y con indexación justa a la tasa oficial del día de pago (BCV).
-*   **Para el Comercio:** Clientes recurrentes garantizados y riesgo de impago igual a cero.
-*   **Para el Colegio:** Bienestar social de su personal y sostenibilidad gracias a una comisión de servicio (3% al 5%) retenida al comercio.
+*   **Para el Trabajador:** Alimentos a crédito sin cobro de intereses, con indexación BCV oficial justa en Bolívares.
+*   **Para el Comercio:** Ventas y clientes garantizados. Acceso a una pestaña de Reporte Financiero Mensual para conciliar balances y comisiones.
+*   **Para el Colegio:** Bienestar social y sostenibilidad mediante comisiones (3% al 5%) acumuladas que los proveedores transfieren a inicio de mes.
 
 <!-- slide -->
 
-# Diapositiva 6: Gestión Simplificada
-## El Panel de Control del Colegio
+# Diapositiva 6: Gestión Administrativa Completa
+## Control Absoluto en el Panel del Colegio
 
-La directiva tiene el control absoluto del sistema a través de un panel privado e intuitivo:
+La administración escolar gestiona todo el flujo operativo desde una interfaz unificada:
 
-*   **Aprobaciones:** Revisión y activación de cuentas de nuevos trabajadores asignando su sueldo base real.
-*   **Reportes de Nómina:** Generación en un solo clic del archivo CSV listo para contabilidad.
-*   **Gestión BCV**: Conexión real a la tasa oficial del día y recálculo automático de saldos en bolívares.
-*   **Editor Web**: Modificación de textos, tarjetas y políticas directamente desde la pantalla.
+*   **CRUD de Proveedores:** Registra, edita comisiones o datos bancarios y elimina proveedores de forma segura (con validación de integridad para evitar errores de base de datos).
+*   **Aprobaciones y Nómina:** Activación de nuevas cuentas de personal e importación instantánea del archivo de nómina para contabilidad.
+*   **Editor Web de Contenidos:** Personalización de textos, avisos y políticas directo en el sitio web sin contratar programadores.
+
 
 <!-- slide -->
 

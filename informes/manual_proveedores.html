@@ -266,17 +266,18 @@
     <!-- Step 3 -->
     <div class="step-card">
       <span class="step-number">Paso 3</span>
-      <h3>Procesar un Cobro (Escanear Código QR)</h3>
+      <h3>Procesar un Cobro (Nuevo Flujo POS)</h3>
       <p>Cuando un cliente vaya a cancelar en tu caja con la plataforma:</p>
       <ol style="margin-left: 20px; font-size: 0.9rem; color: #334155; margin-bottom: 15px;">
-        <li style="margin-bottom: 6px;">El cliente te mostrará un <strong>código QR</strong> activo en su teléfono.</li>
-        <li style="margin-bottom: 6px;">Haz clic en el botón azul destacado de tu panel: <strong>"Escanear / Detectar QR de Trabajador"</strong>.</li>
-        <li style="margin-bottom: 6px;">El sistema leerá el código automáticamente y evaluará si el cliente tiene saldo y capacidad de pago suficiente.</li>
-        <li style="margin-bottom: 6px;">Si el crédito es aprobado, verás la tarjeta verde en pantalla:</li>
+        <li style="margin-bottom: 6px;">El cliente te mostrará su <strong>código QR de identidad</strong> en su teléfono.</li>
+        <li style="margin-bottom: 6px;">Haz clic en el botón destacado de tu panel: <strong>"Escanear / Detectar QR de Trabajador"</strong>.</li>
+        <li style="margin-bottom: 6px;">El sistema leerá el código, validará la cuenta y cargará el Nombre, Cédula y Nivel de Crédito en el POS.</li>
+        <li style="margin-bottom: 6px;"><strong>Introduce el Monto Total de la Venta</strong> en el recuadro habilitado.</li>
+        <li style="margin-bottom: 6px;">El sistema mostrará en tiempo real el cálculo de la inicial sugerida y la tarjeta de validación de crédito:</li>
       </ol>
 
       <div class="validation-box">
-        <h4>✓ Crédito Pre-Aprobado</h4>
+        <h4>✓ Datos de Compra Cargados (Nivel 2)</h4>
         <div class="validation-grid">
           <div>
             <span>CLIENTE</span>
@@ -287,33 +288,53 @@
             <strong>$50.00 USD</strong>
           </div>
           <div>
-            <span>INICIAL A COBRAR EN CAJA</span>
-            <strong style="color: var(--success); font-family: monospace;">$15.00 USD</strong>
+            <span>INICIAL SUGERIDA (35%)</span>
+            <strong style="color: var(--success); font-family: monospace;">$17.50 USD (o Bs. equivalentes)</strong>
           </div>
           <div>
             <span>MONTO A FINANCIAR</span>
-            <strong style="color: var(--primary); font-family: monospace;">$35.00 USD</strong>
+            <strong style="color: var(--primary); font-family: monospace;">$32.50 USD</strong>
           </div>
         </div>
       </div>
 
-      <ol start="5" style="margin-left: 20px; font-size: 0.9rem; color: #334155;">
-        <li style="margin-bottom: 6px;"><strong>Cobra en caja el "Monto Inicial"</strong> en efectivo o pago móvil (si el cliente configuró inicial).</li>
-        <li style="margin-bottom: 6px;">Para concretar y registrar la venta, haz clic en el botón verde: <strong>"Procesar Venta y Crédito"</strong>.</li>
-        <li style="margin-bottom: 6px;">¡Listo! Se actualizará la pantalla y podrás entregar los productos de forma segura.</li>
+      <ol start="6" style="margin-left: 20px; font-size: 0.9rem; color: #334155; margin-bottom: 15px;">
+        <li style="margin-bottom: 6px;">Utiliza el control <strong>"Aplica Inicial" / "Inicial Cero"</strong> para decidir si cobras o no el abono inicial.</li>
+        <li style="margin-bottom: 6px;">Verás un recuadro de advertencia en color amarillo:
+          <div style="background-color: rgba(245, 158, 11, 0.08); border-left: 4px solid var(--warning); padding: 12px; border-radius: 8px; margin: 10px 0; font-size: 0.85rem; color: #b45309; font-weight: 600;">
+            ⚠️ Cobrar la inicial en caja en divisas o Bolívares (BCV) antes de confirmar la compra.
+          </div>
+        </li>
+        <li style="margin-bottom: 6px;">Recibe el pago de la inicial de forma física en caja (si corresponde) y presiona el botón verde: <strong>"Procesar Venta y Crédito"</strong> para registrar la venta.</li>
+        <li style="margin-bottom: 6px;">¡Listo! El sistema guardará la venta y podrás entregar los productos con seguridad.</li>
       </ol>
     </div>
 
     <!-- Step 4 -->
     <div class="step-card">
       <span class="step-number">Paso 4</span>
-      <h3>Liquidación de tus Ventas</h3>
+      <h3>Consulta de Ventas Recientes</h3>
       <p>Para llevar la contabilidad de tu negocio:</p>
       <ul>
-        <li>En la parte inferior de tu POS, verás la tabla de <strong>"Ventas Recientes"</strong> con los detalles de tus facturaciones.</li>
-        <li>El colegio procesará quincenalmente la nómina del personal, recaudará los fondos y te transferirá el dinero acumulado de las compras a tu cuenta enlace bancaria.</li>
-        <li>Al monto a transferir se le descontará de forma automática el porcentaje de comisión del colegio (ej: 4% sobre el financiamiento) detallado en la tabla de conciliación.</li>
+        <li>En la parte inferior de tu POS, verás la tabla de <strong>"Ventas Recientes"</strong> con los detalles de tus facturaciones, fechas, montos en dólares y comisiones.</li>
+        <li>El colegio procesará quincenalmente la nómina del personal, recaudará los fondos de los trabajadores y te transferirá el dinero consolidado de las compras a tu cuenta enlace bancaria.</li>
       </ul>
+    </div>
+
+    <!-- Step 5 -->
+    <div class="step-card">
+      <span class="step-number">Paso 5</span>
+      <h3>Reporte Financiero Mensual y Pago de Comisión</h3>
+      <p>El sistema cuenta con un panel transparente de conciliación de comisiones:</p>
+      <ol style="margin-left: 20px; font-size: 0.9rem; color: #334155; margin-bottom: 15px;">
+        <li style="margin-bottom: 6px;">Haz clic en la pestaña <strong>"Reporte Financiero"</strong> en el menú superior del portal de proveedores.</li>
+        <li style="margin-bottom: 6px;">Usa el <strong>Selector de Mes</strong> para filtrar las ventas de cualquier periodo.</li>
+        <li style="margin-bottom: 6px;">Visualizarás el total de <strong>Ventas Brutas</strong>, <strong>Ventas Liquidadas</strong> por el colegio y la <strong>Comisión Acumulada</strong> que debes pagar.</li>
+        <li style="margin-bottom: 6px;">Debajo verás las cuentas bancarias de la escuela para transferencias.</li>
+      </ol>
+      <div class="tip-box" style="background-color: rgba(16, 185, 129, 0.05); border-left-color: var(--success); color: #047857;">
+        <strong>Pago de Comisión:</strong> Durante los primeros 5 días de cada mes, realiza la transferencia bancaria por el monto acumulado de comisiones al colegio y notifica a la administración con tu reporte digital mensual.
+      </div>
     </div>
 
     <div class="footer-note">

@@ -31,24 +31,36 @@ Al abrir tu negocio o caja cada día:
 
 ---
 
-## Paso 3: Cómo procesar una Venta con Código QR (Paso a Paso)
+## Paso 3: Cómo procesar una Venta con Código QR (Nuevo Flujo POS)
 Cuando un trabajador del colegio vaya a realizar una compra en tu caja:
-1.  El cliente te mostrará un **código QR** generado desde su teléfono inteligente (el cual contiene los detalles y montos de su compra).
-2.  En tu punto de venta digital, presiona el botón destacado: **"Escanear / Detectar QR de Trabajador"**.
-3.  El sistema leerá el código automáticamente y realizará la validación en tiempo real con el servidor.
-4.  Si el cliente tiene cupo y capacidad suficiente, el sistema mostrará un cuadro verde brillante: **"Crédito Pre-Aprobado"**.
-5.  En ese cuadro podrás verificar visualmente los datos para tu control interno:
-    *   **Nombre del Cliente**: Para verificar su cédula o identidad.
-    *   **Monto Total de la Compra**: Suma total facturada.
-    *   **Monto Inicial a Cobrar**: La inicial en efectivo o pago móvil que el cliente debe entregarte en ese mismo instante en la caja.
-    *   **Monto a Financiar**: El saldo restante que el colegio te garantizará y pagará por nómina.
-6.  **Confirma la transacción** haciendo clic en el botón verde: **"Procesar Venta y Crédito"**.
-7.  Verás una notificación verde de éxito: *"Venta Procesada con éxito"*.
-8.  ¡Listo! Puedes entregar la mercancía al cliente. El cupo del trabajador se descontará al instante y tu registro de ventas se actualizará.
+1.  El cliente te mostrará su **código QR de identidad** generado desde su teléfono inteligente.
+2.  En tu punto de venta digital (POS), presiona el botón: **"Escanear / Detectar QR de Trabajador"**.
+3.  El sistema leerá el código, validará que esté activo y mostrará el **Nombre**, **Cédula** y **Nivel de Crédito** del trabajador.
+4.  Introduce el **Monto Total de la Compra** en dólares en el campo habilitado.
+5.  De manera automática, el sistema calculará y mostrará el **"Monto de Inicial Sugerido"** en dólares y bolívares (según la tasa oficial del BCV) según el nivel del cliente.
+6.  Utiliza el selector/switch de control:
+    *   **Aplica Inicial (Activado):** El sistema calcula y exige el cobro de la inicial en caja.
+    *   **Inicial Cero (Desactivado):** Si el comercio decide no cobrar inicial para esta compra o aplicar inicial cero, desactiva el switch.
+7.  **Alerta de Seguridad:** El POS te mostrará una advertencia en amarillo para recordarte **"Cobrar la inicial en caja en divisas o Bolívares (BCV) antes de confirmar la compra"**.
+8.  Una vez cobrada la inicial física (si aplica), presiona el botón verde: **"Procesar Venta y Crédito"**.
+9.  Verás una notificación verde de éxito: *"Venta Procesada con éxito"*. ¡Listo! Puedes entregar la mercancía.
 
 ---
 
-## Paso 4: Consulta de Ventas y Conciliación
-En la parte inferior de tu punto de venta, verás un historial llamado **"Ventas Recientes"**. 
-*   Allí podrás ver cada transacción procesada con el nombre del trabajador, fecha, monto en dólares y la comisión del colegio.
-*   El colegio recopilará las quincenas de nómina y transferirá a tu cuenta el monto neto facturado (ventas totales menos el porcentaje de comisión acordado).
+## Paso 4: Consulta de Ventas Recientes
+En la parte inferior de tu panel POS, verás un historial llamado **"Ventas Recientes"**.
+*   Allí podrás auditar cada transacción procesada con el nombre del trabajador, fecha, monto en dólares y la comisión correspondiente a la plataforma del colegio.
+*   El colegio consolidará y descontará el saldo neto de las ventas quincenales del personal mediante nómina, y lo transferirá directamente a tu cuenta bancaria de enlace registrada.
+
+---
+
+## Paso 5: Reporte Financiero Mensual y Pago de Comisión
+Para asegurar la transparencia y el correcto mantenimiento de la plataforma, el sistema cuenta con un módulo de reporte de comisiones:
+1.  En la parte superior de tu panel, haz clic en la pestaña **"Reporte Financiero"**.
+2.  Utiliza el **Selector de Mes** para visualizar el balance de cualquier período.
+3.  Verás una tarjeta detallada con:
+    *   **Ventas Brutas:** La suma total facturada.
+    *   **Ventas Liquidadas:** Las ventas ya transferidas por el colegio.
+    *   **Comisión Acumulada:** El porcentaje de comisión acumulada durante el mes que debes pagar al colegio por el uso de la plataforma.
+4.  Debajo del balance verás los **Datos Bancarios de la Escuela** (Banco, Cuenta Corriente, RIF, Correo electrónico).
+5.  **Procedimiento de Pago:** Durante los primeros 5 días de cada mes, debes transferir el total de la *Comisión Acumulada* del mes anterior a la cuenta bancaria del colegio y reportarla a la administración escolar.

@@ -28,50 +28,59 @@ Por otro lado, los comercios locales buscan clientes recurrentes pero temen asum
 
 ## 3. Funcionamiento General del Ecosistema (Paso a Paso)
 
-El sistema funciona de manera digital a través de teléfonos inteligentes y computadoras, sin necesidad de instalar aplicaciones pesadas:
+El sistema funciona de manera digital a través de teléfonos inteligentes y computadoras, sin necesidad de instalar aplicaciones pesadas, bajo un flujo seguro en 4 pasos:
 
 ```
-[Trabajador] genera un código QR de compra 
+[Trabajador] genera código QR de identidad (expira en 5 min)
      ↓
-[Comercio Aliado] escanea el código en su punto de venta digital
+[Comercio Aliado] escanea el QR en su POS digital e ingresa el monto total de la venta
      ↓
-[Sistema] valida de forma automática el límite y aprueba la compra
+[Sistema] calcula inicial requerida (según nivel) y valida disponibilidad de cupo
      ↓
-[Directiva del Colegio] procesa la nómina quincenal, deduce los pagos y liquida al comercio
+[Comercio] recauda la inicial física en caja, procesa la venta, y el colegio garantiza el saldo neto
 ```
 
-### Reglas de Seguridad Financiera Integradas:
-Para proteger el sueldo del trabajador y evitar el sobreendeudamiento, el sistema cuenta con dos candados financieros automáticos:
-*   **Límite Máximo de Crédito (Regla del 50%)**: Por defecto, un trabajador solo puede tener una deuda total acumulada equivalente al **50% de su salario mensual base**. Por ejemplo, si gana $300, su saldo de financiamiento máximo será de $150.
-*   **Capacidad de Pago Saludable (Regla del 30%)**: Ninguna quincena individual a cobrar puede superar el **15% de su sueldo base** (es decir, el 30% del salario mensual sumando ambas quincenas). Esto garantiza que el trabajador mantenga liquidez para otros gastos básicos del hogar.
+### Reglas de Seguridad Financiera y Gamificación (Niveles de Crédito):
+Para proteger el sueldo del personal y promover una cultura de pago responsable, se implementó un sistema gamificado de **4 Niveles de Crédito** que reemplaza los límites estáticos:
+
+1.  **Nivel 1 (Básico):** El trabajador financia hasta el **15.0%** de su salario quincenal base. Requiere pagar obligatoriamente el **40% de inicial** en efectivo/transferencia al comercio.
+2.  **Nivel 2 (Confiable):** El límite de financiamiento sube al **16.5%** de su salario quincenal base. La inicial requerida baja al **35% de la compra**.
+3.  **Nivel 3 (Preferente):** El límite de financiamiento sube al **18.5%** de su salario quincenal base. La inicial requerida baja al **30% de la compra**.
+4.  **Nivel 4 (Élite):** El límite de financiamiento alcanza el **20.0%** de su salario quincenal base. La inicial requerida baja al **20% de la compra**.
+
+*   **Ascenso de Nivel:** El sistema evalúa el comportamiento de pago de forma automática. Al cancelar las cuotas puntualmente en nómina, el trabajador sube de nivel y desbloquea mejores condiciones.
+*   **Penalización por Mora (Bloqueo de QR):** Si el trabajador tiene quincenas vencidas sin conciliar, su código QR se bloquea automáticamente por seguridad. Se desbloquea en tiempo real una vez que se ponga al día o ascienda de nivel.
 
 ---
 
-## 4. Beneficios del Ecosistema
+## 4. Beneficios y Características del Ecosistema
 
 ### A. Para la Institución (Colegio Rafael Castillo)
-*   **Apoyo Social Real**: Ofrece un beneficio tangible que mejora la calidad de vida y retención de nuestro valioso personal escolar.
-*   **Control y Automatización**: Todo el flujo de nómina se genera en un clic mediante reportes descargables compatibles con Excel.
-*   **Sostenibilidad Operativa**: El colegio retiene una comisión de servicio (del 3% al 5%) sobre la venta total de los comercios aliados. Esta comisión sufraga los costos operativos y de mantenimiento del software.
-*   **Editor de Contenidos**: El administrador puede cambiar textos, títulos y políticas de la página web desde su panel de control de manera fácil y rápida, sin contratar programadores.
+*   **Apoyo Social Directo:** Ofrece una alternativa real y controlada contra la usura comercial externa, apoyando la alimentación del personal.
+*   **Control y Automatización:** Generación del reporte consolidado de nómina listo para importar a Excel con un clic.
+*   **Sostenibilidad Operativa y Comisión Acumulada:** En lugar de cobrar comisiones inmediatas que resten fluidez al comercio, las comisiones (de 3% a 5%) se acumulan a lo largo del mes. El comercio cuenta con un reporte financiero transparente y realiza una única transferencia consolidad al colegio a inicio de mes.
+*   **Control Total de Proveedores (Panel Admin):** La directiva cuenta con una herramienta CRUD completa para agregar nuevos comercios, editar sus tasas de comisión y actualizar sus datos de cuenta. El sistema incluye una salvaguarda de eliminación segura: bloquea el borrado de proveedores con transacciones registradas para prevenir daños en la integridad de la base de datos.
+*   **Editor de Contenidos:** Modificación directa de textos y políticas institucionales de la web desde el panel sin requerir servicios de desarrollo de software.
 
 ### B. Para los Trabajadores (Docentes y Administrativos)
-*   **Crédito Inmediato y sin Intereses**: No existen cobros de intereses por financiamiento. Las cuotas son limpias y directas.
-*   **Indexación Justa (BCV)**: Las deudas se cotizan en dólares para proteger el valor de los productos, pero se pagan en Bolívares convertidos exactamente a la tasa oficial del día del descuento quincenal.
-*   **Simplicidad**: Solo necesitan registrarse una vez, esperar su aprobación y generar códigos QR desde su celular al momento de pagar en la caja del establecimiento comercial.
+*   **Crédito Justo sin Intereses:** Financiamiento sin tasas de interés adicionales, permitiendo estirar el presupuesto familiar.
+*   **Indexación BCV:** Saldos en dólares para protección inflacionaria del comercio, cancelados en Bolívares calculados de forma exacta a la tasa oficial del BCV del día de cobro.
+*   **Identificación QR Simple:** Proceso de compra ágil de un solo botón. No requiere ingresar montos ni plazos; todo es calculado por el POS del comercio.
 
 ### C. Para los Comercios Aliados (Víveres y Carnes)
-*   **Clientela Cautiva y Fiel**: Acceso directo a todos los trabajadores de la institución como clientes habituales.
-*   **Cero Riesgo de Pérdida**: El colegio garantiza la cobranza mediante deducción de nómina quincenal y transfiere los montos consolidados al comercio.
-*   **Punto de Venta Integrado**: No necesitan costosos equipos. Su panel cuenta con un lector que escanea el QR del cliente en segundos desde cualquier smartphone.
+*   **Garantía y Flujo:** Cobro asegurado mediante deducción de nómina quincenal, eliminando el riesgo de cartera vencida.
+*   **Reportes Financieros Transparentes:** Pestaña interactiva con selector de mes para auditar ventas brutas, montos liquidados y comisiones pendientes por pagar al colegio con los datos bancarios escolares visibles.
+*   **POS Flexible:** Switch de control para decidir si requiere cobrar el abono sugerido ("Aplica Inicial") o eximirlo temporalmente para la venta ("Inicial Cero"), adaptándose a la realidad comercial de cada transacción.
 
 ---
 
 ## 5. Privacidad y Seguridad del Sistema
-La privacidad es un pilar fundamental del proyecto. El sistema ha sido optimizado con los siguientes lineamientos:
-1.  **Cuentas Inactivas por Defecto**: Cualquier usuario nuevo que se registre debe ser aprobado explícitamente por el administrador antes de poder acceder al sistema.
-2.  **Ocultación de Infraestructuras**: No se muestra ningún dato técnico sobre servidores, bases de datos o proveedores de hosting en la interfaz del usuario. Los mensajes de error y notificaciones se presentan en un lenguaje amigable y sin referencias de desarrollo.
-3.  **Seguridad en Simulación**: Los controles de simulación y restablecimiento del sistema están protegidos bajo autenticación estricta en el panel administrativo del colegio.
+La seguridad informática y la experiencia de usuario se han blindado con los siguientes lineamientos:
+1.  **Aprobación Administrativa Directa:** Toda cuenta de trabajador o proveedor recién registrada se crea en estado inactivo. Debe ser validada y activada por el colegio antes de operar.
+2.  **Ocultación de Infraestructuras:** Mensajes de error amigables sin referencias a bases de datos, APIs o proveedores de hosting externos para prevenir vulnerabilidades de información.
+3.  **Foco de Teclado Móvil Optimizado:** Se solucionó el error de layout en dispositivos móviles donde el teclado virtual desplazaba y descolocaba los campos de entrada de login, manteniendo un comportamiento estable para mayor fluidez.
+4.  **Autenticación en Controles Críticos:** Los modos de simulación y restablecimiento del sistema están encriptados y restringidos al panel del administrador de la junta.
+
 
 ---
 
