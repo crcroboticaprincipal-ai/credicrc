@@ -3282,19 +3282,28 @@ export default function App() {
                                       <table className="w-full text-xs text-left text-slate-600">
                                         <thead className="text-[10px] bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
                                           {/* Comisión oculta del proveedor — confidencial del colegio */}
-                                          <tr><th className="py-3 px-4">Trabajador</th><th className="py-3 px-4">Fecha</th><th className="py-3 px-4 text-right">Total ($)</th><th className="py-3 px-4 text-right">Inicial ($)</th><th className="py-3 px-4 text-right text-green-600">Financiado ($)</th></tr>
+                                          <tr><th className="py-3 px-4">Trabajador</th><th className="py-3 px-4">Fecha</th><th className="py-3 px-4 text-right">Total ($)</th><th className="py-3 px-4 text-right">Inicial ($)</th><th className="py-3 px-4 text-right text-green-600">Financiado ($)</th><th className="py-3 px-4 text-center">Estado Liquidación</th></tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                          {paginated.map(t => (
-                                            <tr key={t.id} className="hover:bg-slate-50/50 transition">
-                                              <td className="py-3 px-4 font-bold text-slate-800">{t.trabajadores_crc?.nombre || 'N/A'}</td>
-                                              <td className="py-3 px-4 text-slate-500">{new Date(t.fecha_transaccion).toLocaleDateString('es-VE')}</td>
-                                              <td className="py-3 px-4 text-right font-mono font-bold">${t.monto_usd.toFixed(2)}</td>
-                                              <td className="py-3 px-4 text-right font-mono">${t.monto_inicial_pagado_usd.toFixed(2)}</td>
-                                              <td className="py-3 px-4 text-right font-bold text-green-600 font-mono">${(t.monto_usd - t.monto_inicial_pagado_usd).toFixed(2)}</td>
-                                            </tr>
-                                          ))}
+                                          {paginated.map(t => {
+                                            const isLiquidado = t.estado_liquidacion_proveedor === 'liquidado';
+                                            return (
+                                              <tr key={t.id} className="hover:bg-slate-50/50 transition">
+                                                <td className="py-3 px-4 font-bold text-slate-800">{t.trabajadores_crc?.nombre || 'N/A'}</td>
+                                                <td className="py-3 px-4 text-slate-500">{new Date(t.fecha_transaccion).toLocaleDateString('es-VE')}</td>
+                                                <td className="py-3 px-4 text-right font-mono font-bold">${t.monto_usd.toFixed(2)}</td>
+                                                <td className="py-3 px-4 text-right font-mono">${t.monto_inicial_pagado_usd.toFixed(2)}</td>
+                                                <td className="py-3 px-4 text-right font-bold text-green-600 font-mono">${(t.monto_usd - t.monto_inicial_pagado_usd).toFixed(2)}</td>
+                                                <td className="py-3 px-4 text-center">
+                                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${isLiquidado ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
+                                                    {isLiquidado ? '✅ Liquidado' : '⏳ Pendiente'}
+                                                  </span>
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
                                         </tbody>
+
                                       </table>
                                     </div>
                                     {totalPages > 1 && (
