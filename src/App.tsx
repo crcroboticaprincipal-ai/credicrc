@@ -3967,84 +3967,6 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* Tesorería / Liquidación Proveedores tab */}
-                        {adminTab === 'tesoreria' && (() => {
-                          const reportMonths = Array.from(new Set(transactions.map(t => t.fecha_transaccion?.slice(0, 7)))).sort().reverse();
-                          const activeMonth = reportMonths[0] || '';
-                          const monthTxs = transactions.filter(t => t.fecha_transaccion?.startsWith(activeMonth));
-                          // Group by provider
-                          const byProvider = providers.map(prov => {
-                            const ptxs = monthTxs.filter(t => t.proveedor_id === prov.id);
-                            const bruto = ptxs.reduce((s, t) => s + t.monto_usd, 0);
-                            const comision = ptxs.reduce((s, t) => s + t.comision_monto_usd, 0);
-                            const neto = bruto - comision;
-                            return { ...prov, bruto, comision, neto, txCount: ptxs.length };
-                          }).filter(p => p.txCount > 0);
-
-                          return (
-                            <div className="space-y-6">
-                              <div>
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Liquidación de Comisiones a Proveedores</h4>
-                                <p className="text-xs text-slate-500 font-semibold mt-1">
-                                  Resumen del periodo <strong className="text-[#002855]">{activeMonth || 'Sin datos'}</strong>. 
-                                  Verifica los montos netos a transferir a cada proveedor aliado.
-                                </p>
-                              </div>
-
-                              {byProvider.length === 0 ? (
-                                <div className="border-2 border-dashed border-slate-200 rounded-2xl py-12 flex flex-col items-center text-slate-400 gap-2">
-                                  <DollarSign size={32} className="stroke-1"/>
-                                  <p className="text-sm font-semibold">Sin transacciones en el periodo actual.</p>
-                                </div>
-                              ) : (
-                                <div className="space-y-4">
-                                  <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-                                    <table className="w-full text-xs text-left text-slate-600">
-                                      <thead className="bg-slate-50 text-[10px] text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                                        <tr>
-                                          <th className="py-3 px-4">Proveedor</th>
-                                          <th className="py-3 px-4">Categoría</th>
-                                          <th className="py-3 px-4 text-center">Transacciones</th>
-                                          <th className="py-3 px-4 text-right">Monto Bruto ($)</th>
-                                          <th className="py-3 px-4 text-right text-amber-700">Comisión ($)</th>
-                                          <th className="py-3 px-4 text-right text-emerald-700">Neto a Transferir ($)</th>
-                                          <th className="py-3 px-4 text-right text-[#E53935]">Neto (Bs.)</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100">
-                                        {byProvider.map(p => (
-                                          <tr key={p.id} className="hover:bg-slate-50/50 transition">
-                                            <td className="py-3 px-4 font-bold text-slate-800">{p.nombre}</td>
-                                            <td className="py-3 px-4"><span className="text-[9px] font-bold uppercase bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-100">{p.categoria}</span></td>
-                                            <td className="py-3 px-4 text-center font-bold">{p.txCount}</td>
-                                            <td className="py-3 px-4 text-right font-mono font-bold">${p.bruto.toFixed(2)}</td>
-                                            <td className="py-3 px-4 text-right font-mono text-amber-700 font-bold">${p.comision.toFixed(2)}</td>
-                                            <td className="py-3 px-4 text-right font-mono font-black text-emerald-700 text-sm">${p.neto.toFixed(2)}</td>
-                                            <td className="py-3 px-4 text-right font-mono text-[#E53935] font-bold">Bs. {(p.neto * bcvRate).toFixed(2)}</td>
-                                          </tr>
-                                        ))}
-                                        <tr className="bg-slate-100 font-black">
-                                          <td colSpan={3} className="py-3 px-4 text-slate-700 text-xs uppercase">TOTALES DEL MES</td>
-                                          <td className="py-3 px-4 text-right font-mono text-slate-800">${byProvider.reduce((s,p)=>s+p.bruto,0).toFixed(2)}</td>
-                                          <td className="py-3 px-4 text-right font-mono text-amber-700">${byProvider.reduce((s,p)=>s+p.comision,0).toFixed(2)}</td>
-                                          <td className="py-3 px-4 text-right font-mono text-emerald-700 text-sm">${byProvider.reduce((s,p)=>s+p.neto,0).toFixed(2)}</td>
-                                          <td className="py-3 px-4 text-right font-mono text-[#E53935]">Bs. {(byProvider.reduce((s,p)=>s+p.neto,0) * bcvRate).toFixed(2)}</td>
-                                        </tr>
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                  <div className="flex justify-end">
-                                    <button onClick={() => window.print()}
-                                      className="bg-[#002855] hover:bg-[#073B73] text-white text-[11px] font-black py-2.5 px-5 rounded-xl transition flex items-center gap-1.5">
-                                      <Download size={13}/> Exportar Reporte de Liquidación
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-
                         {/* Gamification tab */}
                         {adminTab === 'gamification' && (
                           <div className="space-y-4">
@@ -4105,8 +4027,9 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* Providers tab */}
-                        {adminTab === 'providers' && (
+                        {/* Providers & Tesorería / Liquidación Proveedores tab */}
+                        {(adminTab === 'providers' || adminTab === 'tesoreria') && (
+
                           <div className="space-y-4">
                             {/* Header */}
                             <div className="flex flex-wrap justify-between items-center gap-3">
