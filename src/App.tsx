@@ -8,7 +8,7 @@ import {
   Percent, Search, Users, ShieldCheck, Download, Check,
   X, Home, Star, Lock, Upload, Eye, Zap,
   Award, ArrowUp, ArrowDown, Clock, AlertTriangle, Camera, CameraOff,
-  Building2, DollarSign, Banknote, Phone, MapPin, BadgeCheck, ImagePlus
+  Building2, Banknote, Phone, MapPin, BadgeCheck, ImagePlus
 } from 'lucide-react';
 
 // ─── HOOK: DISIPADOR DE PETICIONES DUPLICADAS (Alta Concurrencia) ─────────────
@@ -3607,13 +3607,13 @@ export default function App() {
                           ] : []),
                           { id: 'payroll', label: 'Nómina', icon: <Calendar size={13}/> },
                           { id: 'direct-payments', label: `Pagos Directos${pendingDirectPayments > 0 ? ` (${pendingDirectPayments})` : ''}`, icon: <Upload size={13}/> },
+                          { id: 'providers', label: 'Proveedores', icon: <ShoppingBag size={13}/> },
                           ...(currentUser?.rol === 'admin' ? [
                             { id: 'gamification', label: 'Gamificación', icon: <Award size={13}/> },
-                            { id: 'providers', label: 'Proveedores', icon: <ShoppingBag size={13}/> },
                             { id: 'notificaciones', label: 'Notificaciones', icon: <Bell size={13}/> },
                           ] : []),
-                          { id: 'tesoreria', label: 'Liquidación Proveedores', icon: <DollarSign size={13}/> },
                         ] as { id: typeof adminTab, label: string, icon: any }[]).map(tab => (
+
                           <button key={tab.id} onClick={() => setAdminTab(tab.id)}
                             className={`flex items-center gap-1.5 px-4 py-3 text-[10px] font-bold whitespace-nowrap transition-all ${adminTab === tab.id ? 'bg-white border-b-2 border-[#002855] text-[#002855]' : 'text-slate-500 hover:text-slate-700'}`}>
                             {tab.icon}{tab.label}
