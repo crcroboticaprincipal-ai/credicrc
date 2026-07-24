@@ -1549,6 +1549,36 @@ export default function App() {
 
   };
 
+  // ─── HELPER DE INVOCACIÓN DE EDGE FUNCTION CON FALLBACK Y ALTA DISPONIBILIDAD ───
+  const callPasswordResetFunction = async (payload: any) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('handle-password-reset', { body: payload });
+      if (!error && data) return data;
+      if (error && !error.message?.includes('Failed to send')) throw error;
+    } catch (err: any) {
+      if (err.message && !err.message.includes('Failed to send')) throw err;
+    }
+
+    // Fallback con fetch directo (evita bloqueos de ciertas extensiones de navegador)
+    const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoamJ1ZG9ldXhncGNnaGtoYXNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MzI2MDQsImV4cCI6MjA5NzIwODYwNH0.BSmFFIYSlXX1tPHSXnweBjkFqauseVntZ5w99ibp4Cs';
+    const res = await fetch('https://ghjbudoeuxgpcghkhasa.supabase.co/functions/v1/handle-password-reset', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${anonKey}`,
+        'apikey': anonKey
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let parsed;
+      try { parsed = JSON.parse(text); } catch { parsed = { error: text }; }
+      throw new Error(parsed?.error || `Error de conexión (HTTP ${res.status})`);
+    }
+    return await res.json();
+  };
+
   // ─── SOLICITAR RECUPERACIÓN DE CLAVE ───
   const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1558,10 +1588,7 @@ export default function App() {
     }
     setIsAuthSubmitting(true);
     try {
-      const { data, error } = await supabase.functions.invoke('handle-password-reset', {
-        body: { action: 'request', email: authEmail }
-      });
-      if (error) throw error;
+      const data = await callPasswordResetFunction({ action: 'request', email: authEmail });
       if (data?.success) {
         addNotification('success', 'Enlace Enviado', 'Te hemos enviado un enlace seguro para restablecer tu contraseña. Revisa tu correo.');
         setAuthMode('login');
@@ -1569,7 +1596,11 @@ export default function App() {
         addNotification('error', 'Error de Envío', data?.error || 'No se pudo enviar el enlace.');
       }
     } catch (err: any) {
-      addNotification('error', 'Error de Conexión', err.message);
+      const isAdblockError = err.message?.includes('Failed to send') || err.message?.includes('Failed to fetch');
+      const msg = isAdblockError 
+        ? 'Tu navegador o bloqueador de anuncios está interrumpiendo la conexión. Desactiva el bloqueador para credicrc.app o intenta en modo incógnito.'
+        : err.message;
+      addNotification('error', 'Error de Conexión', msg);
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -1597,16 +1628,11 @@ export default function App() {
 
     setIsAuthSubmitting(true);
     try {
-      // Hashing client-side first
       const pwHash = await hashPassword(newPassword);
-
-      const { data, error } = await supabase.functions.invoke('handle-password-reset', {
-        body: { action: 'confirm', token: resetToken, password: pwHash }
-      });
-      if (error) throw error;
+      const data = await callPasswordResetFunction({ action: 'confirm', token: resetToken, password: pwHash });
       if (data?.success) {
         addNotification('success', 'Contraseña Actualizada', 'Tu contraseña ha sido restablecida exitosamente.');
-        setShowSuccessOverlay(true); // Mostrar el check animado
+        setShowSuccessOverlay(true);
         setNewPassword('');
         setConfirmNewPassword('');
         setResetToken(null);
@@ -1620,6 +1646,7 @@ export default function App() {
       setIsAuthSubmitting(false);
     }
   };
+
 
   const handleLogout = () => {
     setCurrentUser(null);
