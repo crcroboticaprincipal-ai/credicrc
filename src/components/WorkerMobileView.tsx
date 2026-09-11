@@ -239,16 +239,40 @@ export const WorkerMobileView = memo(function WorkerMobileView({
               </div>
             )}
 
+            {/* Tienda Online & Estado de Pedidos */}
+            <FeatureGuard moduloId="tienda_online" flags={flags}>
+              <div className="bg-gradient-to-r from-[#002855] to-[#073B73] rounded-2xl p-4 text-white shadow-sm flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 text-amber-400 font-extrabold text-xs uppercase tracking-wider">
+                    <ShoppingCart size={14} /> Tienda Online & Pedidos
+                  </div>
+                  <p className="text-white font-black text-sm mt-1">Compra productos a crédito</p>
+                  <p className="text-blue-200 text-[10px] font-medium mt-0.5">Explora catálogos de proveedores aliados</p>
+                </div>
+                <button
+                  onClick={() => setActiveTab('comercios')}
+                  className="bg-amber-400 text-[#002855] font-black text-xs px-3.5 py-2 rounded-xl shadow hover:bg-amber-300 transition flex-shrink-0 flex items-center gap-1"
+                >
+                  <Store size={12} /> Ir a Tiendas
+                </button>
+              </div>
+            </FeatureGuard>
+
             {/* Estado de pedidos recientes */}
             <FeatureGuard moduloId="pedidos_checkout" flags={flags}>
-              {workerOrders.length > 0 && (
-                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-                  <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
                     <ShoppingCart size={14} className="text-[#64B5F6]" />
-                    <span className="text-xs font-black text-slate-700 uppercase tracking-wide">Mis Pedidos</span>
+                    <span className="text-xs font-black text-slate-700 uppercase tracking-wide">Mis Pedidos Online</span>
                   </div>
-                  <div className="p-3 space-y-2">
-                    {workerOrders.slice(0, 2).map(order => {
+                  <button onClick={() => setActiveTab('comercios')} className="text-[10px] font-bold text-[#002855] hover:underline">
+                    + Nuevo Pedido
+                  </button>
+                </div>
+                <div className="p-3 space-y-2">
+                  {workerOrders.length > 0 ? (
+                    workerOrders.slice(0, 3).map(order => {
                       const cfg = ORDER_STATUS_CONFIG[order.status];
                       return (
                         <div key={order.id} className={`flex items-center justify-between p-3 rounded-xl border ${cfg.border} ${cfg.bg}`}>
@@ -261,10 +285,15 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                           </span>
                         </div>
                       );
-                    })}
-                  </div>
+                    })
+                  ) : (
+                    <div className="text-center py-4 text-slate-400">
+                      <p className="text-xs font-semibold">No tienes pedidos recientes</p>
+                      <p className="text-[10px] mt-0.5 text-slate-400">Entra en 'Comercios' para realizar tu primera compra online.</p>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </FeatureGuard>
 
             {/* Cupos especiales */}
@@ -316,28 +345,31 @@ export const WorkerMobileView = memo(function WorkerMobileView({
             <div className="grid grid-cols-1 gap-3">
               {providers.map(prov => {
                 const provProductos = productos.filter(p => p.proveedor_id === prov.id && p.activo);
-                const tieneVitrina = flags.find(f => f.modulo_id === 'tienda_online')?.activo && provProductos.length > 0;
+                const flagTienda = flags.find(f => f.modulo_id === 'tienda_online');
+                const isTiendaEnabled = !flagTienda || flagTienda.activo;
 
                 return (
-                  <div key={prov.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4">
-                    <div className="w-12 h-12 bg-gradient-to-br from-blue-50 to-slate-100 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  <div key={prov.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4 hover:border-blue-300 transition">
+                    <div className="w-12 h-12 bg-gradient-to-br from-blue-50 to-slate-100 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden shadow-inner border border-slate-100">
                       {prov.logo_url
                         ? <img src={prov.logo_url} alt={prov.nombre} className="w-full h-full object-cover" />
-                        : <Store size={20} className="text-slate-400" />}
+                        : <Store size={20} className="text-[#002855]" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-black text-slate-800 truncate">{prov.nombre}</p>
                       <p className="text-[10px] text-slate-500 font-semibold">{prov.categoria}</p>
-                      {tieneVitrina && (
-                        <p className="text-[10px] text-blue-600 font-bold mt-0.5">🛒 {provProductos.length} productos</p>
+                      {provProductos.length > 0 ? (
+                        <p className="text-[10px] text-emerald-600 font-bold mt-0.5">🛒 {provProductos.length} productos en catálogo</p>
+                      ) : (
+                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">Catálogo online habilitado</p>
                       )}
                     </div>
-                    {tieneVitrina && (
+                    {isTiendaEnabled && (
                       <button
                         onClick={() => setShowTienda(prov.id)}
-                        className="flex-shrink-0 bg-[#002855] text-white text-[10px] font-black px-3 py-2 rounded-xl flex items-center gap-1 hover:bg-[#073B73] transition"
+                        className="flex-shrink-0 bg-[#002855] text-white text-[10px] font-black px-3.5 py-2 rounded-xl flex items-center gap-1.5 hover:bg-[#073B73] transition shadow-sm"
                       >
-                        <ShoppingCart size={11} /> Ver
+                        <ShoppingCart size={12} /> Ver Tienda
                       </button>
                     )}
                   </div>
