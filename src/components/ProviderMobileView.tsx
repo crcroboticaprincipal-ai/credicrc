@@ -98,7 +98,7 @@ export const ProviderMobileView = memo(function ProviderMobileView({
   };
 
   return (
-    <div className="flex flex-col bg-slate-50 h-[100dvh] max-h-[100dvh] w-full overflow-hidden relative" style={{ touchAction: 'pan-y' }}>
+    <div className="flex flex-col bg-slate-50 min-h-screen w-full relative" style={{ touchAction: 'pan-y' }}>
 
       {/* ─── HEADER FIJO ─── */}
       <header className="bg-gradient-to-r from-[#002855] to-[#073B73] text-white px-4 flex-shrink-0 sticky top-0 z-30 shadow-md"
@@ -123,7 +123,7 @@ export const ProviderMobileView = memo(function ProviderMobileView({
       </header>
 
       {/* ─── ÁREA PRINCIPAL (scroll fluido 60 FPS) ─── */}
-      <main className="flex-1 overflow-y-auto overscroll-contain modal-scroll pb-24 touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <main className="flex-1 overflow-y-auto overscroll-contain modal-scroll pb-32 touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
 
         {/* ════ TAB: POS ════ */}
         {activeTab === 'pos' && (
@@ -290,8 +290,8 @@ export const ProviderMobileView = memo(function ProviderMobileView({
       </main>
 
       {/* ─── BOTTOM NAVIGATION BAR ─── */}
-      <nav className="bg-white border-t border-slate-200 flex-shrink-0"
-        style={{ paddingBottom: `env(safe-area-inset-bottom, 0px)` }}>
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-xl"
+        style={{ paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + 4px)` }}>
         <div className="flex">
           {([
             { id: 'pos', icon: <QrCode size={20} />, label: 'POS' },

@@ -2466,7 +2466,7 @@ export default function App() {
     (currentUser?.rol === 'trabajador' && (currentUser as any).cedula && w.cedula === (currentUser as any).cedula) ||
     (currentUser?.rol === 'trabajador' && currentUser.datos_registro?.cedula && w.cedula === currentUser.datos_registro.cedula) ||
     (currentUser?.rol === 'trabajador' && currentUser.nombre && w.nombre === currentUser.nombre)
-  ) || (currentUser?.rol === 'trabajador' && workers.length > 0 ? workers[0] : undefined);
+  ) || (workers.length > 0 ? (workers.find(w => w.id === activeWorkerId) || workers[0]) : undefined);
 
   const activeWId = currentWorker?.id || activeWorkerId;
   const currentWorkerTransactions = transactions.filter(t => t.trabajador_id === activeWId);
@@ -2476,7 +2476,7 @@ export default function App() {
     p.id === activeProviderId ||
     (currentUser?.rol === 'proveedor' && (currentUser as any).proveedor_id && p.id === (currentUser as any).proveedor_id) ||
     (currentUser?.rol === 'proveedor' && currentUser.nombre && p.nombre === currentUser.nombre)
-  ) || (currentUser?.rol === 'proveedor' && providers.length > 0 ? providers[0] : undefined);
+  ) || (providers.length > 0 ? (providers.find(p => p.id === activeProviderId) || providers[0]) : undefined);
 
   const activePId = currentProvider?.id || activeProviderId;
   const currentProviderTransactions = transactions.filter(t => t.proveedor_id === activePId);
@@ -2788,7 +2788,7 @@ export default function App() {
                     {currentWorker ? (
                       <>
                         {/* ── V2: Vista Mobile con Bottom Nav ── */}
-                        <div className="lg:hidden fixed inset-0 z-30 bg-slate-50 overflow-hidden">
+                        <div className="lg:hidden w-full">
                           <WorkerMobileView
                             worker={{
                               id: currentWorker.id,
@@ -3201,7 +3201,7 @@ export default function App() {
                       return (
                         <>
                           {/* ── V2: Vista Mobile Proveedor con Bottom Nav ── */}
-                          <div className="lg:hidden fixed inset-0 z-30 bg-slate-50 overflow-hidden">
+                          <div className="lg:hidden w-full">
                             <ProviderMobileView
                               provider={{
                                 id: currentProvider.id,
@@ -3237,8 +3237,8 @@ export default function App() {
                       );
                     })() : null}
 
-                        {/* Historial de ventas */}
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                        {/* Historial de ventas (solo desktop, en mobile va dentro de ProviderMobileView) */}
+                        <div className="hidden lg:block bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                           {/* Tabs de Historial y Reporte */}
                           <div className="flex border-b border-slate-200 gap-6 overflow-x-auto">
                             <button type="button" onClick={() => setProviderSubTab('sales')}

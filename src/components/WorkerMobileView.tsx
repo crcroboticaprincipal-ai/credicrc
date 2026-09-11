@@ -137,7 +137,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
   };
 
   return (
-    <div className="flex flex-col bg-slate-50 h-[100dvh] max-h-[100dvh] w-full overflow-hidden relative" style={{ touchAction: 'pan-y' }}>
+    <div className="flex flex-col bg-slate-50 min-h-screen w-full relative" style={{ touchAction: 'pan-y' }}>
 
       {/* ─── HEADER FIJO ─── */}
       <header className="bg-gradient-to-r from-[#002855] to-[#073B73] text-white px-4 pt-safe-top flex-shrink-0 sticky top-0 z-30 shadow-md"
@@ -148,14 +148,14 @@ export const WorkerMobileView = memo(function WorkerMobileView({
               <span className="text-lg">{lvl.icon}</span>
             </div>
             <div>
-              <p className="text-[10px] text-blue-300 font-bold uppercase tracking-wider">{lvl.nombre} · {worker.cargo}</p>
-              <p className="text-sm font-black leading-tight">{worker.nombre.split(' ')[0]} {worker.nombre.split(' ')[2] || ''}</p>
+              <p className="text-[10px] text-blue-300 font-bold uppercase tracking-wider">{lvl.nombre} · {worker.cargo || 'Trabajador'}</p>
+              <p className="text-sm font-black leading-tight">{(worker.nombre || 'Trabajador').split(' ')[0]} {(worker.nombre || '').split(' ')[2] || ''}</p>
             </div>
           </div>
           <div className="text-right">
             <p className="text-[10px] text-blue-300 font-bold">Disponible</p>
-            <p className="text-2xl font-black font-mono leading-none">${worker.limite_disponible.toFixed(0)}</p>
-            <p className="text-[10px] text-blue-300 font-semibold">de ${worker.limite_total.toFixed(0)} USD</p>
+            <p className="text-2xl font-black font-mono leading-none">${(worker.limite_disponible ?? 0).toFixed(0)}</p>
+            <p className="text-[10px] text-blue-300 font-semibold">de ${(worker.limite_total ?? 0).toFixed(0)} USD</p>
           </div>
         </div>
         {/* Barra de progreso del cupo */}
@@ -166,7 +166,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
       </header>
 
       {/* ─── ÁREA PRINCIPAL (scroll fluido 60 FPS) ─── */}
-      <main className="flex-1 overflow-y-auto overscroll-contain modal-scroll pb-24 touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <main className="flex-1 overflow-y-auto overscroll-contain modal-scroll pb-32 touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
 
         {/* ════ TAB: INICIO ════ */}
         {activeTab === 'inicio' && (
@@ -513,8 +513,8 @@ export const WorkerMobileView = memo(function WorkerMobileView({
       </main>
 
       {/* ─── BOTTOM NAVIGATION BAR ─── */}
-      <nav className="bg-white border-t border-slate-200 flex-shrink-0 safe-area-bottom"
-        style={{ paddingBottom: `env(safe-area-inset-bottom, 0px)` }}>
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-xl"
+        style={{ paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + 4px)` }}>
         <div className="flex">
           {([
             { id: 'inicio', icon: <Home size={20} />, label: 'Inicio' },
