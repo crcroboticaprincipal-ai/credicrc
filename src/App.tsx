@@ -1415,26 +1415,48 @@ export default function App() {
   }, [addNotification, fetchData]);
 
   const handleAddProducto = useCallback(async (data: { nombre: string; descripcion: string; precio: string; imagen?: File }) => {
-    if (!activeProviderId) return;
+    if (!activeProviderId) throw new Error('No hay sesión activa de proveedor.');
     let imagen_url: string | null = null;
     if (data.imagen) {
-      const fileExt = data.imagen.name.split('.').pop();
-      const fileName = `${activeProviderId}_${Date.now()}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage.from('productos').upload(fileName, data.imagen);
-      if (!uploadError) {
-        const { data: urlData } = supabase.storage.from('productos').getPublicUrl(fileName);
-        imagen_url = urlData.publicUrl;
+      try {
+        const fileExt = data.imagen.name.split('.').pop();
+        const fileName = `${activeProviderId}_${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from('productos').upload(fileName, data.imagen);
+        if (!uploadError) {
+          const { data: urlData } = supabase.storage.from('productos').getPublicUrl(fileName);
+          imagen_url = urlData.publicUrl;
+        }
+      } catch (e) {
+        console.warn('[Storage upload warning]:', e);
       }
     }
-    const { data: resData, error } = await supabase.rpc('agregar_producto_proveedor', {
+    
+    // 1. Intentar RPC primero
+    const { data: resData, error: rpcErr } = await supabase.rpc('agregar_producto_proveedor', {
       p_proveedor_id: activeProviderId,
       p_nombre: data.nombre,
       p_descripcion: data.descripcion || null,
       p_precio: parseFloat(data.precio),
       p_imagen_url: imagen_url,
     });
-    if (error) throw error;
-    if (resData && resData[0] && !resData[0].ok) throw new Error(resData[0].mensaje);
+
+    if (rpcErr) {
+      console.warn('[RPC agregar_producto_proveedor error, intentando inserción directa]:', rpcErr.message);
+      // 2. Fallback: INSERT directo en la tabla productos_proveedor
+      const { error: insErr } = await supabase.from('productos_proveedor').insert([{
+        proveedor_id: activeProviderId,
+        nombre: data.nombre,
+        descripcion: data.descripcion || null,
+        precio: parseFloat(data.precio),
+        imagen_url: imagen_url,
+        stock_disponible: true,
+        activo: true,
+      }]);
+      if (insErr) throw insErr;
+    } else if (resData && resData[0] && !resData[0].ok) {
+      throw new Error(resData[0].mensaje);
+    }
+
     fetchData();
   }, [activeProviderId, fetchData]);
 

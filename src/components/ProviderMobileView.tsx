@@ -91,7 +91,9 @@ export const ProviderMobileView = memo(function ProviderMobileView({
       await onAddProduct({ nombre: npNombre, descripcion: npDesc, precio: npPrecio, imagen: npImagen });
       setNpNombre(''); setNpDesc(''); setNpPrecio(''); setNpImagen(undefined);
       setShowAddProduct(false);
-      onNotification('success', 'Producto Añadido', 'Producto publicado en tu vitrina.');
+      onNotification('success', 'Producto Añadido', 'Producto publicado exitosamente en tu vitrina.');
+    } catch (err: any) {
+      onNotification('error', 'Error al publicar', err?.message || 'No se pudo guardar el producto.');
     } finally {
       setIsAddingProduct(false);
     }
