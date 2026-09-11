@@ -2460,11 +2460,26 @@ export default function App() {
   const totalCommissions = transactions.filter(t => t.estatus === 'Aprobada' || t.estatus === 'Completada').reduce((s, t) => s + t.comision_monto_usd, 0);
   const pendingDeductionsCount = installments.filter(i => i.estatus === 'Pendiente').length;
   const pendingDirectPayments = directPayments.filter(d => d.estatus === 'Pendiente').length;
-  const currentWorker = workers.find(w => w.id === activeWorkerId);
-  const currentWorkerTransactions = transactions.filter(t => t.trabajador_id === activeWorkerId);
-  const currentWorkerInstallments = installments.filter(i => i.transacciones_credicrc?.trabajador_id === activeWorkerId);
-  const currentProvider = providers.find(p => p.id === activeProviderId);
-  const currentProviderTransactions = transactions.filter(t => t.proveedor_id === activeProviderId);
+  const currentWorker = workers.find(w =>
+    w.id === activeWorkerId ||
+    (currentUser?.rol === 'trabajador' && currentUser.trabajador_id && w.id === currentUser.trabajador_id) ||
+    (currentUser?.rol === 'trabajador' && (currentUser as any).cedula && w.cedula === (currentUser as any).cedula) ||
+    (currentUser?.rol === 'trabajador' && currentUser.datos_registro?.cedula && w.cedula === currentUser.datos_registro.cedula) ||
+    (currentUser?.rol === 'trabajador' && currentUser.nombre && w.nombre === currentUser.nombre)
+  ) || (currentUser?.rol === 'trabajador' && workers.length > 0 ? workers[0] : undefined);
+
+  const activeWId = currentWorker?.id || activeWorkerId;
+  const currentWorkerTransactions = transactions.filter(t => t.trabajador_id === activeWId);
+  const currentWorkerInstallments = installments.filter(i => i.transacciones_credicrc?.trabajador_id === activeWId || (i as any).trabajador_id === activeWId);
+
+  const currentProvider = providers.find(p =>
+    p.id === activeProviderId ||
+    (currentUser?.rol === 'proveedor' && (currentUser as any).proveedor_id && p.id === (currentUser as any).proveedor_id) ||
+    (currentUser?.rol === 'proveedor' && currentUser.nombre && p.nombre === currentUser.nombre)
+  ) || (currentUser?.rol === 'proveedor' && providers.length > 0 ? providers[0] : undefined);
+
+  const activePId = currentProvider?.id || activeProviderId;
+  const currentProviderTransactions = transactions.filter(t => t.proveedor_id === activePId);
 
   // Reporte Financiero Mensual del Proveedor
   const reportMonths = Array.from(new Set(currentProviderTransactions.map(t => {
@@ -3115,7 +3130,13 @@ export default function App() {
                         )}
                       </div>
                     </>
-                  ) : null}
+                  ) : (
+                    <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center space-y-3 my-6 shadow-sm">
+                      <RefreshCw size={36} className="animate-spin text-[#002855] mx-auto" />
+                      <h3 className="text-base font-black text-slate-800">Cargando Panel de Trabajador...</h3>
+                      <p className="text-xs text-slate-500 font-semibold">Verificando tu ficha de crédito y nómina.</p>
+                    </div>
+                  )}
                   </div>
                 ) : <AuthCard role="trabajador" {...authCardProps}/>
               )}
