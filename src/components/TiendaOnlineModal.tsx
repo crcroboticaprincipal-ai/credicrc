@@ -99,6 +99,11 @@ export const TiendaOnlineModal = memo(function TiendaOnlineModal({
       setStep('confirmado');
       onPedidoCreado(res.order_id, res.order_number);
       onNotification('success', '¡Pedido Creado!', `Tu pedido ${res.order_number} fue enviado al proveedor.`);
+
+      // Disparar correo de notificación en tiempo real al proveedor
+      supabase.functions.invoke('order-notification', {
+        body: { order_id: res.order_id }
+      }).catch(err => console.error('[Order Notification Invoke Error]:', err));
     } catch (err: any) {
       onNotification('error', 'Error al crear pedido', err.message);
     } finally {
