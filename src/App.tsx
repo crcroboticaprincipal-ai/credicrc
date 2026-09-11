@@ -1431,47 +1431,76 @@ export default function App() {
       }
     }
     
-    // 1. Intentar RPC primero
-    const { data: resData, error: rpcErr } = await supabase.rpc('agregar_producto_proveedor', {
-      p_proveedor_id: activeProviderId,
-      p_nombre: data.nombre,
-      p_descripcion: data.descripcion || null,
-      p_precio: parseFloat(data.precio),
-      p_imagen_url: imagen_url,
-    });
-
-    if (rpcErr) {
-      console.warn('[RPC agregar_producto_proveedor error, intentando inserción directa]:', rpcErr.message);
-      // 2. Fallback: INSERT directo en la tabla productos_proveedor
-      const { error: insErr } = await supabase.from('productos_proveedor').insert([{
+    // 1. Invocar Edge Function (con Service Role Key) para bypass RLS
+    const { data: fnData, error: fnErr } = await supabase.functions.invoke('manage-product', {
+      body: {
+        action: 'add',
         proveedor_id: activeProviderId,
         nombre: data.nombre,
         descripcion: data.descripcion || null,
         precio: parseFloat(data.precio),
         imagen_url: imagen_url,
-        stock_disponible: true,
-        activo: true,
-      }]);
-      if (insErr) throw insErr;
-    } else if (resData && resData[0] && !resData[0].ok) {
-      throw new Error(resData[0].mensaje);
+      }
+    });
+
+    if (fnErr || (fnData && !fnData.success)) {
+      console.warn('[Edge function manage-product error, intentando RPC/Direct]:', fnErr?.message || fnData?.error);
+      // 2. Fallback a RPC
+      const { data: resData, error: rpcErr } = await supabase.rpc('agregar_producto_proveedor', {
+        p_proveedor_id: activeProviderId,
+        p_nombre: data.nombre,
+        p_descripcion: data.descripcion || null,
+        p_precio: parseFloat(data.precio),
+        p_imagen_url: imagen_url,
+      });
+
+      if (rpcErr) {
+        // 3. Fallback a direct INSERT
+        const { error: insErr } = await supabase.from('productos_proveedor').insert([{
+          proveedor_id: activeProviderId,
+          nombre: data.nombre,
+          descripcion: data.descripcion || null,
+          precio: parseFloat(data.precio),
+          imagen_url: imagen_url,
+          stock_disponible: true,
+          activo: true,
+        }]);
+        if (insErr) throw insErr;
+      } else if (resData && resData[0] && !resData[0].ok) {
+        throw new Error(resData[0].mensaje);
+      }
     }
 
     fetchData();
   }, [activeProviderId, fetchData]);
 
   const handleToggleProducto = useCallback(async (productoId: string, activo: boolean) => {
-    await supabase.from('productos_proveedor').update({ activo, updated_at: new Date().toISOString() }).eq('id', productoId);
+    const { data: fnData, error: fnErr } = await supabase.functions.invoke('manage-product', {
+      body: { action: 'toggle', producto_id: productoId, activo }
+    });
+    if (fnErr || (fnData && !fnData.success)) {
+      await supabase.from('productos_proveedor').update({ activo, updated_at: new Date().toISOString() }).eq('id', productoId);
+    }
     fetchData();
   }, [fetchData]);
 
   const handleToggleStock = useCallback(async (productoId: string, disponible: boolean) => {
-    await supabase.from('productos_proveedor').update({ stock_disponible: disponible, updated_at: new Date().toISOString() }).eq('id', productoId);
+    const { data: fnData, error: fnErr } = await supabase.functions.invoke('manage-product', {
+      body: { action: 'toggle', producto_id: productoId, stock_disponible: disponible }
+    });
+    if (fnErr || (fnData && !fnData.success)) {
+      await supabase.from('productos_proveedor').update({ stock_disponible: disponible, updated_at: new Date().toISOString() }).eq('id', productoId);
+    }
     fetchData();
   }, [fetchData]);
 
   const handleDeleteProducto = useCallback(async (productoId: string) => {
-    await supabase.from('productos_proveedor').delete().eq('id', productoId);
+    const { data: fnData, error: fnErr } = await supabase.functions.invoke('manage-product', {
+      body: { action: 'delete', producto_id: productoId }
+    });
+    if (fnErr || (fnData && !fnData.success)) {
+      await supabase.from('productos_proveedor').delete().eq('id', productoId);
+    }
     fetchData();
   }, [fetchData]);
 
