@@ -117,7 +117,12 @@ export const WorkerMobileView = memo(function WorkerMobileView({
 
   const pendingInstallments = installments.filter(i => i.estatus === 'Pendiente');
   const lvl = CREDIT_LEVELS.find(l => l.nivel === worker.nivel_credito) || CREDIT_LEVELS[0];
-  const pct = worker.limite_total > 0 ? (worker.limite_disponible / worker.limite_total) * 100 : 0;
+  const activeOrdersTotal = orders
+    .filter(o => o.trabajador_id === worker.id && ['pending', 'accepted', 'preparing', 'ready', 'in_transit'].includes(o.status))
+    .reduce((sum, o) => sum + (o.monto_total_usd || 0), 0);
+
+  const limiteDisponibleEfectivo = Math.max(0, (worker.limite_disponible ?? 0) - activeOrdersTotal);
+  const pct = worker.limite_total > 0 ? (limiteDisponibleEfectivo / worker.limite_total) * 100 : 0;
 
   const proveedorActivo = providers.find(p => p.id === showTienda);
   const productosProveedor = showTienda ? productos.filter(p => p.proveedor_id === showTienda) : [];
@@ -154,7 +159,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
           </div>
           <div className="text-right">
             <p className="text-[10px] text-blue-300 font-bold">Disponible</p>
-            <p className="text-2xl font-black font-mono leading-none">${(worker.limite_disponible ?? 0).toFixed(0)}</p>
+            <p className="text-2xl font-black font-mono leading-none">${limiteDisponibleEfectivo.toFixed(0)}</p>
             <p className="text-[10px] text-blue-300 font-semibold">de ${(worker.limite_total ?? 0).toFixed(0)} USD</p>
           </div>
         </div>
@@ -672,7 +677,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
           proveedorId={proveedorActivo.id}
           proveedorNombre={proveedorActivo.nombre}
           productos={productosProveedor}
-          limiteDisponible={worker.limite_disponible}
+          limiteDisponible={limiteDisponibleEfectivo}
           trabajadorId={worker.id}
           trabajadorNombre={worker.nombre}
           trabajadorCedula={worker.cedula}
