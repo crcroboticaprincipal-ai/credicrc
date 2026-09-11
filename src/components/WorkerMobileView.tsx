@@ -166,7 +166,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
       </header>
 
       {/* ─── ÁREA PRINCIPAL (scroll interno) ─── */}
-      <main className="flex-1 overflow-y-auto modal-scroll">
+      <main className="flex-1 overflow-y-auto modal-scroll pb-28">
 
         {/* ════ TAB: INICIO ════ */}
         {activeTab === 'inicio' && (

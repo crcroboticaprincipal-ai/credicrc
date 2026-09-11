@@ -124,11 +124,34 @@ export const ProviderMobileView = memo(function ProviderMobileView({
       </header>
 
       {/* ─── ÁREA PRINCIPAL ─── */}
-      <main className="flex-1 overflow-y-auto modal-scroll">
+      <main className="flex-1 overflow-y-auto modal-scroll pb-28">
 
         {/* ════ TAB: POS ════ */}
         {activeTab === 'pos' && (
-          <div className="p-4">{posSlot}</div>
+          <div className="p-4 space-y-4">
+            <FeatureGuard moduloId="tienda_online" flags={flags}>
+              <div className="bg-gradient-to-r from-[#002855] to-[#073B73] rounded-2xl p-4 text-white shadow-sm flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-1.5 text-amber-400 font-extrabold text-xs uppercase tracking-wider">
+                    <Store size={14} /> Tienda Online & Pedidos
+                  </div>
+                  <p className="text-white font-black text-sm mt-0.5">{productosActivos}/10 Productos en Catálogo</p>
+                  <p className="text-blue-200 text-[10px] font-medium mt-0.5">
+                    {pendingOrders > 0 ? `⚠️ Tienes ${pendingOrders} pedido(s) por procesar` : 'Gestiona tus productos y pedidos de compra'}
+                  </p>
+                </div>
+                <div className="flex gap-1.5 flex-shrink-0">
+                  <button onClick={() => setActiveTab('productos')} className="bg-amber-400 text-[#002855] font-black text-xs px-3 py-2 rounded-xl shadow hover:bg-amber-300 transition">
+                    Catálogo
+                  </button>
+                  <button onClick={() => setActiveTab('pedidos')} className="bg-white/10 text-white font-black text-xs px-3 py-2 rounded-xl border border-white/20 hover:bg-white/20 transition relative">
+                    Pedidos {pendingOrders > 0 && <span className="inline-block w-2 h-2 bg-red-400 rounded-full ml-1 animate-pulse" />}
+                  </button>
+                </div>
+              </div>
+            </FeatureGuard>
+            {posSlot}
+          </div>
         )}
 
         {/* ════ TAB: PEDIDOS ════ */}
@@ -255,7 +278,7 @@ export const ProviderMobileView = memo(function ProviderMobileView({
           {([
             { id: 'pos', icon: <QrCode size={20} />, label: 'POS' },
             { id: 'pedidos', icon: <Package2 size={20} />, label: 'Pedidos', badge: pendingOrders },
-            { id: 'productos', icon: <Store size={20} />, label: 'Vitrina' },
+            { id: 'productos', icon: <Store size={20} />, label: 'Mi Tienda' },
             { id: 'perfil', icon: <User size={20} />, label: 'Perfil' },
           ] as Array<{ id: ProviderTab; icon: React.ReactNode; label: string; badge?: number }>).map(tab => (
             <button
