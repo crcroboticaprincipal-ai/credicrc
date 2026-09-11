@@ -1151,6 +1151,7 @@ export default function App() {
   const [bulkSalary, setBulkSalary] = useState('');
   const [isApplyingBulk, setIsApplyingBulk] = useState(false);
   const [payrollFilterMonth, setPayrollFilterMonth] = useState('');
+  const [payrollStatusFilter, setPayrollStatusFilter] = useState<'todos' | 'pendientes' | 'cobradas'>('todos');
   const [isProcessingPayroll, setIsProcessingPayroll] = useState(false);
   const [showAddWorkerModal, setShowAddWorkerModal] = useState(false);
   const [newWorkerNombre, setNewWorkerNombre] = useState('');
@@ -3806,88 +3807,134 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* Payroll tab - Agrupado por Mes */}
-                        {adminTab === 'payroll' && (
-                          <>
-                          <div className="space-y-4">
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                              <div>
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Centro de Descuentos de Ventas Agrupadas por Mes</h4>
-                                <p className="text-xs text-slate-500 font-semibold mt-1">Selecciona el mes para ver y procesar los cobros consolidados de nómina.</p>
+                        {/* Payroll tab - Agrupado por Mes y Filtro de Estatus */}
+                        {adminTab === 'payroll' && (() => {
+                          const activeM = payrollFilterMonth || _curMonth;
+                          const monthInsts = installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === activeM);
+                          const pendingInsts = monthInsts.filter(i => i.estatus === 'Pendiente');
+                          const paidInsts = monthInsts.filter(i => i.estatus === 'Cobrado' || i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación');
+
+                          const displayInsts = monthInsts.filter(i => {
+                            if (payrollStatusFilter === 'pendientes') return i.estatus === 'Pendiente';
+                            if (payrollStatusFilter === 'cobradas') return i.estatus === 'Cobrado' || i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación';
+                            return true;
+                          });
+
+                          return (
+                            <>
+                            <div className="space-y-4">
+                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                                <div>
+                                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Centro de Descuentos de Ventas Agrupadas por Mes</h4>
+                                  <p className="text-xs text-slate-500 font-semibold mt-1">Filtra por mes y estado de cobro para gestionar descuentos.</p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <select
+                                    value={activeM}
+                                    onChange={e => setPayrollFilterMonth(e.target.value)}
+                                    className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3.5 text-xs font-bold focus:outline-none cursor-pointer"
+                                  >
+                                    {Array.from(new Set(installments.map(i => i.fecha_cobro ? i.fecha_cobro.slice(0, 7) : _curMonth)))
+                                      .filter(Boolean)
+                                      .sort()
+                                      .reverse()
+                                      .map(m => {
+                                        const [yr, mo] = m.split('-');
+                                        const mDate = new Date(parseInt(yr), parseInt(mo) - 1, 1);
+                                        const mLabel = mDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
+                                        return (
+                                          <option key={m} value={m}>
+                                            Mes: {mLabel.charAt(0).toUpperCase() + mLabel.slice(1)} ({m})
+                                          </option>
+                                        );
+                                      })}
+                                  </select>
+                                  <button onClick={handleExportPayrollCSV} className="bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold py-2 px-4 rounded-xl border border-slate-200 flex items-center gap-1 transition">
+                                    <Download size={14} className="text-[#64B5F6]"/>CSV
+                                  </button>
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <select
-                                  value={payrollFilterMonth || _curMonth}
-                                  onChange={e => setPayrollFilterMonth(e.target.value)}
-                                  className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3.5 text-xs font-bold focus:outline-none cursor-pointer"
+
+                              {/* Filtros por Estatus de Venta / Descuento */}
+                              <div className="flex flex-wrap bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setPayrollStatusFilter('todos')}
+                                  className={`px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 ${
+                                    payrollStatusFilter === 'todos' ? 'bg-[#002855] text-white shadow-sm' : 'text-slate-600 hover:text-[#002855]'
+                                  }`}
                                 >
-                                  {Array.from(new Set(installments.map(i => i.fecha_cobro ? i.fecha_cobro.slice(0, 7) : _curMonth)))
-                                    .filter(Boolean)
-                                    .sort()
-                                    .reverse()
-                                    .map(m => {
-                                      const [yr, mo] = m.split('-');
-                                      const mDate = new Date(parseInt(yr), parseInt(mo) - 1, 1);
-                                      const mLabel = mDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
+                                  Todas ({monthInsts.length})
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPayrollStatusFilter('pendientes')}
+                                  className={`px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 ${
+                                    payrollStatusFilter === 'pendientes' ? 'bg-[#002855] text-white shadow-sm' : 'text-slate-600 hover:text-[#002855]'
+                                  }`}
+                                >
+                                  <span className="w-2 h-2 rounded-full bg-amber-400" />
+                                  Ventas por Descontar ({pendingInsts.length})
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPayrollStatusFilter('cobradas')}
+                                  className={`px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 ${
+                                    payrollStatusFilter === 'cobradas' ? 'bg-[#002855] text-white shadow-sm' : 'text-slate-600 hover:text-[#002855]'
+                                  }`}
+                                >
+                                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                                  Ventas Descontadas ({paidInsts.length})
+                                </button>
+                              </div>
+
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs text-left text-slate-600">
+                                  <thead className="text-[10px] bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                                    <tr><th className="py-3 px-4">Trabajador</th><th className="py-3 px-4">Cédula</th><th className="py-3 px-4">Comercio Aliado</th><th className="py-3 px-4">Concepto / Fecha</th><th className="py-3 px-4 text-right">Cuota ($)</th><th className="py-3 px-4 text-right">A Descontar (VES)</th><th className="py-3 px-4 text-center">Estatus</th></tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {displayInsts.map(i => {
+                                      const w = i.transacciones_credicrc?.trabajadores_crc;
+                                      const p = i.transacciones_credicrc?.proveedores_aliados;
+                                      const txDate = i.transacciones_credicrc?.fecha_transaccion
+                                        ? new Date(i.transacciones_credicrc.fecha_transaccion).toLocaleDateString('es-VE', { day:'2-digit', month:'2-digit', year:'2-digit' })
+                                        : '—';
                                       return (
-                                        <option key={m} value={m}>
-                                          Mes: {mLabel.charAt(0).toUpperCase() + mLabel.slice(1)} ({m})
-                                        </option>
+                                        <tr key={i.id} className={`hover:bg-slate-50/50 transition ${i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación' ? 'opacity-60' : ''}`}>
+                                          <td className="py-3 px-4 font-bold text-slate-800">{w?.nombre ?? '—'}</td>
+                                          <td className="py-3 px-4 font-mono font-bold text-slate-500">{w?.cedula ?? '—'}</td>
+                                          <td className="py-3 px-4 font-semibold text-slate-700">{p?.nombre ?? '—'}</td>
+                                          <td className="py-3 px-4 text-slate-500 text-[10px]">Compra {txDate} · {p?.categoria ?? '—'}</td>
+                                          <td className="py-3 px-4 text-right font-mono font-bold">${i.monto_usd.toFixed(2)}</td>
+                                          <td className="py-3 px-4 text-right font-black text-[#E53935] font-mono">Bs. {(i.monto_usd * bcvRate).toFixed(2)}</td>
+                                          <td className="py-3 px-4 text-center">
+                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold border ${i.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' : i.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : i.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>{i.estatus}</span>
+                                          </td>
+                                        </tr>
                                       );
                                     })}
-                                </select>
-                                <button onClick={handleExportPayrollCSV} className="bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold py-2 px-4 rounded-xl border border-slate-200 flex items-center gap-1 transition">
-                                  <Download size={14} className="text-[#64B5F6]"/>CSV
-                                </button>
+                                    {displayInsts.length === 0 && (
+                                      <tr><td colSpan={7} className="text-center py-8 text-slate-400 font-semibold">Sin cuotas registradas para este filtro.</td></tr>
+                                    )}
+                                  </tbody>
+                                </table>
                               </div>
-                            </div>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-xs text-left text-slate-600">
-                                <thead className="text-[10px] bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                                  <tr><th className="py-3 px-4">Trabajador</th><th className="py-3 px-4">Cédula</th><th className="py-3 px-4">Comercio Aliado</th><th className="py-3 px-4">Concepto / Fecha</th><th className="py-3 px-4 text-right">Cuota ($)</th><th className="py-3 px-4 text-right">A Descontar (VES)</th><th className="py-3 px-4 text-center">Estatus</th></tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                  {installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === (payrollFilterMonth || _curMonth)).map(i => {
-                                    const w = i.transacciones_credicrc?.trabajadores_crc;
-                                    const p = i.transacciones_credicrc?.proveedores_aliados;
-                                    const txDate = i.transacciones_credicrc?.fecha_transaccion
-                                      ? new Date(i.transacciones_credicrc.fecha_transaccion).toLocaleDateString('es-VE', { day:'2-digit', month:'2-digit', year:'2-digit' })
-                                      : '—';
-                                    return (
-                                      <tr key={i.id} className={`hover:bg-slate-50/50 transition ${i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación' ? 'opacity-60' : ''}`}>
-                                        <td className="py-3 px-4 font-bold text-slate-800">{w?.nombre ?? '—'}</td>
-                                        <td className="py-3 px-4 font-mono font-bold text-slate-500">{w?.cedula ?? '—'}</td>
-                                        <td className="py-3 px-4 font-semibold text-slate-700">{p?.nombre ?? '—'}</td>
-                                        <td className="py-3 px-4 text-slate-500 text-[10px]">Compra {txDate} · {p?.categoria ?? '—'}</td>
-                                        <td className="py-3 px-4 text-right font-mono font-bold">${i.monto_usd.toFixed(2)}</td>
-                                        <td className="py-3 px-4 text-right font-black text-[#E53935] font-mono">Bs. {(i.monto_usd * bcvRate).toFixed(2)}</td>
-                                        <td className="py-3 px-4 text-center">
-                                          <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold border ${i.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' : i.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : i.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>{i.estatus}</span>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                  {installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === (payrollFilterMonth || _curMonth)).length === 0 && (
-                                    <tr><td colSpan={7} className="text-center py-8 text-slate-400 font-semibold">Sin cuotas registradas para este mes.</td></tr>
-                                  )}
-                                </tbody>
-                              </table>
-                            </div>
-                            {installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === (payrollFilterMonth || _curMonth) && i.estatus === 'Pendiente').length > 0 && (
-                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                <div className="text-xs text-slate-500 font-bold">
-                                  Total a descontar este mes:{' '}
-                                  <strong className="text-slate-800 font-mono text-sm">${installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === (payrollFilterMonth || _curMonth) && i.estatus === 'Pendiente').reduce((s, i) => s + i.monto_usd, 0).toFixed(2)}</strong>
-                                  {' / '}
-                                  <strong className="text-[#E53935] font-mono text-sm">Bs. {installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === (payrollFilterMonth || _curMonth) && i.estatus === 'Pendiente').reduce((s, i) => s + i.monto_usd * bcvRate, 0).toFixed(2)}</strong>
+                              {pendingInsts.length > 0 && (
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                  <div className="text-xs text-slate-500 font-bold">
+                                    Total a descontar este mes:{' '}
+                                    <strong className="text-slate-800 font-mono text-sm">${pendingInsts.reduce((s, i) => s + i.monto_usd, 0).toFixed(2)}</strong>
+                                    {' / '}
+                                    <strong className="text-[#E53935] font-mono text-sm">Bs. {pendingInsts.reduce((s, i) => s + i.monto_usd * bcvRate, 0).toFixed(2)}</strong>
+                                  </div>
+                                  <button onClick={handleProcessPayrollDeductions} disabled={isProcessingPayroll}
+                                    className="bg-[#002855] hover:bg-[#073B73] text-white text-xs font-bold py-2.5 px-5 rounded-xl shadow transition flex items-center justify-center gap-1.5">
+                                    {isProcessingPayroll ? <><RefreshCw size={14} className="animate-spin"/>Procesando...</> : <><CheckCircle2 size={14}/>Aplicar Descuentos y Conciliar Mes</>}
+                                  </button>
                                 </div>
-                                <button onClick={handleProcessPayrollDeductions} disabled={isProcessingPayroll}
-                                  className="bg-[#002855] hover:bg-[#073B73] text-white text-xs font-bold py-2.5 px-5 rounded-xl shadow transition flex items-center justify-center gap-1.5">
-                                  {isProcessingPayroll ? <><RefreshCw size={14} className="animate-spin"/>Procesando...</> : <><CheckCircle2 size={14}/>Aplicar Descuentos y Conciliar Mes</>}
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                              )}
+                            </div>
 
                           <div className="mt-6 space-y-3">
                             <div className="flex items-center justify-between">
@@ -3929,7 +3976,8 @@ export default function App() {
                             )}
                           </div>
                           </>
-                        )}
+                          );
+                        })()}
 
                         {/* Direct Payments tab */}
 
