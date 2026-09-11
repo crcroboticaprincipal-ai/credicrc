@@ -3155,7 +3155,7 @@ export default function App() {
                             productos={productos}
                             orders={orders}
                             flags={featureFlags}
-                            posSlot={null}
+                            onOpenScanner={() => setShowQRScannerModal(true)}
                             onAddProduct={handleAddProducto}
                             onToggleProduct={handleToggleProducto}
                             onToggleStock={handleToggleStock}

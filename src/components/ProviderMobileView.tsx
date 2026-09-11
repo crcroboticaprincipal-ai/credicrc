@@ -1,6 +1,6 @@
 import { useState, memo } from 'react';
 import {
-  Package2, QrCode, Store, User, LogOut, Upload, X, RefreshCw,
+  Package2, QrCode, Store, User, LogOut, Upload, X, RefreshCw, Camera,
 } from 'lucide-react';
 import type { Order, ProductoProveedor, FeatureFlag } from '../types';
 import { FeatureGuard } from './FeatureGuard';
@@ -20,14 +20,12 @@ interface ProviderMobileViewProps {
   productos: ProductoProveedor[];
   orders: Order[];
   flags: FeatureFlag[];
-  // POS existente (se reutiliza como slot)
-  posSlot: React.ReactNode;
-  // Gestión de productos
+  posSlot?: React.ReactNode;
+  onOpenScanner?: () => void;
   onAddProduct: (data: { nombre: string; descripcion: string; precio: string; imagen?: File }) => Promise<void>;
   onToggleProduct: (id: string, activo: boolean) => Promise<void>;
   onToggleStock: (id: string, disponible: boolean) => Promise<void>;
   onDeleteProduct: (id: string) => Promise<void>;
-  // Pedidos
   onOrderStatusChange: () => void;
   onNotification: (type: 'success' | 'error' | 'warning' | 'info', title: string, msg: string) => void;
   onLogout: () => void;
@@ -61,6 +59,7 @@ export const ProviderMobileView = memo(function ProviderMobileView({
   orders,
   flags,
   posSlot,
+  onOpenScanner,
   onAddProduct,
   onToggleProduct,
   onToggleStock,
@@ -150,7 +149,26 @@ export const ProviderMobileView = memo(function ProviderMobileView({
                 </div>
               </div>
             </FeatureGuard>
-            {posSlot}
+            {posSlot ? posSlot : (
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4 shadow-sm text-center">
+                <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto text-[#002855]">
+                  <QrCode size={36} className="animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-800">Escanear QR de Trabajador</h3>
+                  <p className="text-xs text-slate-500 font-semibold mt-1 leading-relaxed">
+                    Escanea el código QR de identidad del trabajador para verificar su cupo disponible y procesar la venta en tienda.
+                  </p>
+                </div>
+                <button
+                  onClick={onOpenScanner}
+                  className="w-full bg-[#002855] hover:bg-[#073B73] active:scale-[0.98] text-white text-sm font-black py-4 px-4 rounded-2xl shadow-lg transition flex items-center justify-center gap-2.5"
+                >
+                  <Camera size={20} className="text-amber-300 animate-bounce" />
+                  Activar Cámara y Escanear QR
+                </button>
+              </div>
+            )}
           </div>
         )}
 
