@@ -8,7 +8,8 @@ import {
   Percent, Search, Users, ShieldCheck, Download, Check,
   X, Home, Star, Lock, Upload, Eye, Zap,
   Award, ArrowUp, ArrowDown, Clock, AlertTriangle, Camera, CameraOff,
-  Building2, Banknote, Phone, MapPin, BadgeCheck, ImagePlus, ToggleLeft
+  Building2, Banknote, Phone, MapPin, BadgeCheck, ImagePlus, ToggleLeft,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 import { CATEGORIAS_PROVEEDOR, type CategoriaProveedor, type FeatureFlag, type ProductoProveedor, type Order } from './types';
 import { FeatureFlagPanel } from './components/FeatureFlagPanel';
@@ -1152,6 +1153,7 @@ export default function App() {
   const [isApplyingBulk, setIsApplyingBulk] = useState(false);
   const [payrollFilterMonth, setPayrollFilterMonth] = useState('');
   const [payrollStatusFilter, setPayrollStatusFilter] = useState<'todos' | 'pendientes' | 'cobradas'>('todos');
+  const [expandedWorkerCards, setExpandedWorkerCards] = useState<Record<string, boolean>>({});
   const [isProcessingPayroll, setIsProcessingPayroll] = useState(false);
   const [showAddWorkerModal, setShowAddWorkerModal] = useState(false);
   const [newWorkerNombre, setNewWorkerNombre] = useState('');
@@ -3807,26 +3809,62 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* Payroll tab - Agrupado por Mes y Filtro de Estatus */}
+                        {/* Payroll tab - Tarjetas por Trabajador con Desplegable de Compras */}
                         {adminTab === 'payroll' && (() => {
                           const activeM = payrollFilterMonth || _curMonth;
                           const monthInsts = installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === activeM);
                           const pendingInsts = monthInsts.filter(i => i.estatus === 'Pendiente');
                           const paidInsts = monthInsts.filter(i => i.estatus === 'Cobrado' || i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación');
 
-                          const displayInsts = monthInsts.filter(i => {
-                            if (payrollStatusFilter === 'pendientes') return i.estatus === 'Pendiente';
-                            if (payrollStatusFilter === 'cobradas') return i.estatus === 'Cobrado' || i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación';
-                            return true;
+                          // Agrupar por trabajador
+                          const workerGroupsMap: Record<string, {
+                            workerId: string;
+                            nombre: string;
+                            cedula: string;
+                            cargo: string;
+                            insts: typeof monthInsts;
+                          }> = {};
+
+                          monthInsts.forEach(i => {
+                            const w = i.transacciones_credicrc?.trabajadores_crc;
+                            const wId = w?.id || (i as any).trabajador_id || 'desconocido';
+                            if (!workerGroupsMap[wId]) {
+                              workerGroupsMap[wId] = {
+                                workerId: wId,
+                                nombre: w?.nombre || 'Trabajador',
+                                cedula: w?.cedula || '—',
+                                cargo: w?.cargo || 'Nómina',
+                                insts: [],
+                              };
+                            }
+                            workerGroupsMap[wId].insts.push(i);
                           });
+
+                          const workerGroups = Object.values(workerGroupsMap).map(g => {
+                            const filteredInsts = g.insts.filter(i => {
+                              if (payrollStatusFilter === 'pendientes') return i.estatus === 'Pendiente';
+                              if (payrollStatusFilter === 'cobradas') return i.estatus === 'Cobrado' || i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación';
+                              return true;
+                            });
+                            const totalComprado = g.insts.reduce((s, i) => s + i.monto_usd, 0);
+                            const totalPending = g.insts.filter(i => i.estatus === 'Pendiente').reduce((s, i) => s + i.monto_usd, 0);
+
+                            return {
+                              ...g,
+                              filteredInsts,
+                              totalComprado,
+                              totalPending,
+                            };
+                          }).filter(g => g.filteredInsts.length > 0);
 
                           return (
                             <>
                             <div className="space-y-4">
+                              {/* Header Toolbar */}
                               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div>
-                                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Centro de Descuentos de Ventas Agrupadas por Mes</h4>
-                                  <p className="text-xs text-slate-500 font-semibold mt-1">Filtra por mes y estado de cobro para gestionar descuentos.</p>
+                                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Centro de Descuentos de Nómina por Trabajador</h4>
+                                  <p className="text-xs text-slate-500 font-semibold mt-1">Tarjetas de nómina con lista desplegable de compras por trabajador.</p>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <select
@@ -3855,7 +3893,7 @@ export default function App() {
                                 </div>
                               </div>
 
-                              {/* Filtros por Estatus de Venta / Descuento */}
+                              {/* Filtros por Estatus */}
                               <div className="flex flex-wrap bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 gap-1">
                                 <button
                                   type="button"
@@ -3888,42 +3926,115 @@ export default function App() {
                                 </button>
                               </div>
 
-                              <div className="overflow-x-auto">
-                                <table className="w-full text-xs text-left text-slate-600">
-                                  <thead className="text-[10px] bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                                    <tr><th className="py-3 px-4">Trabajador</th><th className="py-3 px-4">Cédula</th><th className="py-3 px-4">Comercio Aliado</th><th className="py-3 px-4">Concepto / Fecha</th><th className="py-3 px-4 text-right">Cuota ($)</th><th className="py-3 px-4 text-right">A Descontar (VES)</th><th className="py-3 px-4 text-center">Estatus</th></tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                    {displayInsts.map(i => {
-                                      const w = i.transacciones_credicrc?.trabajadores_crc;
-                                      const p = i.transacciones_credicrc?.proveedores_aliados;
-                                      const txDate = i.transacciones_credicrc?.fecha_transaccion
-                                        ? new Date(i.transacciones_credicrc.fecha_transaccion).toLocaleDateString('es-VE', { day:'2-digit', month:'2-digit', year:'2-digit' })
-                                        : '—';
-                                      return (
-                                        <tr key={i.id} className={`hover:bg-slate-50/50 transition ${i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación' ? 'opacity-60' : ''}`}>
-                                          <td className="py-3 px-4 font-bold text-slate-800">{w?.nombre ?? '—'}</td>
-                                          <td className="py-3 px-4 font-mono font-bold text-slate-500">{w?.cedula ?? '—'}</td>
-                                          <td className="py-3 px-4 font-semibold text-slate-700">{p?.nombre ?? '—'}</td>
-                                          <td className="py-3 px-4 text-slate-500 text-[10px]">Compra {txDate} · {p?.categoria ?? '—'}</td>
-                                          <td className="py-3 px-4 text-right font-mono font-bold">${i.monto_usd.toFixed(2)}</td>
-                                          <td className="py-3 px-4 text-right font-black text-[#E53935] font-mono">Bs. {(i.monto_usd * bcvRate).toFixed(2)}</td>
-                                          <td className="py-3 px-4 text-center">
-                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold border ${i.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' : i.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : i.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>{i.estatus}</span>
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                    {displayInsts.length === 0 && (
-                                      <tr><td colSpan={7} className="text-center py-8 text-slate-400 font-semibold">Sin cuotas registradas para este filtro.</td></tr>
-                                    )}
-                                  </tbody>
-                                </table>
+                              {/* TARJETAS POR TRABAJADOR CON DESPLEGABLE */}
+                              <div className="space-y-4 mt-4">
+                                {workerGroups.length === 0 ? (
+                                  <div className="border-2 border-dashed border-slate-200 rounded-2xl py-12 text-center text-slate-400 text-xs font-semibold">
+                                    Sin compras ni cuotas registradas para este filtro en el mes.
+                                  </div>
+                                ) : (
+                                  workerGroups.map(g => {
+                                    const isExpanded = expandedWorkerCards[g.workerId] !== false; // Abierto por defecto
+                                    return (
+                                      <div key={g.workerId} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all">
+                                        {/* Encabezado de la Tarjeta del Trabajador */}
+                                        <div
+                                          onClick={() => setExpandedWorkerCards(prev => ({ ...prev, [g.workerId]: !isExpanded }))}
+                                          className="p-4 md:p-5 bg-gradient-to-r from-slate-50 to-white flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50 transition"
+                                        >
+                                          <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 bg-[#002855] text-white rounded-xl flex items-center justify-center font-black text-sm shadow-sm flex-shrink-0">
+                                              {g.nombre.charAt(0)}
+                                            </div>
+                                            <div>
+                                              <div className="flex items-center gap-2">
+                                                <h5 className="font-black text-slate-800 text-sm">{g.nombre}</h5>
+                                                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-blue-50 text-[#002855] border border-blue-100 uppercase">
+                                                  {g.cargo}
+                                                </span>
+                                              </div>
+                                              <p className="text-xs text-slate-500 font-mono font-semibold mt-0.5">C.I. {g.cedula}</p>
+                                            </div>
+                                          </div>
+
+                                          {/* Resumen Financiero del Trabajador en la Tarjeta */}
+                                          <div className="flex flex-wrap items-center gap-5 text-xs">
+                                            <div className="text-right">
+                                              <span className="text-[9px] text-slate-400 font-bold uppercase block">Total Mes</span>
+                                              <span className="font-black font-mono text-slate-800">${g.totalComprado.toFixed(2)}</span>
+                                            </div>
+                                            <div className="text-right border-l border-slate-200 pl-5">
+                                              <span className="text-[9px] text-amber-600 font-bold uppercase block">Por Descontar</span>
+                                              <span className="font-black font-mono text-amber-600 text-sm">${g.totalPending.toFixed(2)}</span>
+                                              <span className="text-[10px] font-mono text-[#E53935] font-bold block">Bs. {(g.totalPending * bcvRate).toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 pl-2 text-slate-400">
+                                              <span className="text-[10px] font-bold">{g.filteredInsts.length} cuotas</span>
+                                              {isExpanded ? <ChevronUp size={18} className="text-[#002855]" /> : <ChevronDown size={18} className="text-slate-400" />}
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* DESPLEGABLE CON LAS COMPRAS DEL TRABAJADOR */}
+                                        {isExpanded && (
+                                          <div className="p-4 bg-slate-50/50 border-t border-slate-100 animate-fade-in space-y-3">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                              Desglose de Compras de {g.nombre}
+                                            </p>
+                                            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                                              <table className="w-full text-xs text-left text-slate-600">
+                                                <thead className="text-[10px] bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                                                  <tr>
+                                                    <th className="py-2.5 px-4">Comercio Aliado</th>
+                                                    <th className="py-2.5 px-4">Concepto / Fecha</th>
+                                                    <th className="py-2.5 px-4 text-right">Cuota ($)</th>
+                                                    <th className="py-2.5 px-4 text-right">A Descontar (VES)</th>
+                                                    <th className="py-2.5 px-4 text-center">Estatus</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                  {g.filteredInsts.map(i => {
+                                                    const p = i.transacciones_credicrc?.proveedores_aliados;
+                                                    const txDate = i.transacciones_credicrc?.fecha_transaccion
+                                                      ? new Date(i.transacciones_credicrc.fecha_transaccion).toLocaleDateString('es-VE', { day:'2-digit', month:'2-digit', year:'2-digit' })
+                                                      : '—';
+                                                    return (
+                                                      <tr key={i.id} className="hover:bg-slate-50 transition">
+                                                        <td className="py-3 px-4 font-bold text-slate-800">{p?.nombre ?? '—'}</td>
+                                                        <td className="py-3 px-4 text-slate-500 text-[10px]">
+                                                          Compra {txDate} · <span className="font-semibold text-slate-700">{p?.categoria ?? '—'}</span>
+                                                        </td>
+                                                        <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">${i.monto_usd.toFixed(2)}</td>
+                                                        <td className="py-3 px-4 text-right font-black text-[#E53935] font-mono">Bs. {(i.monto_usd * bcvRate).toFixed(2)}</td>
+                                                        <td className="py-3 px-4 text-center">
+                                                          <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold border ${
+                                                            i.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' :
+                                                            i.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                            i.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                            'bg-blue-50 text-blue-600 border-blue-200'
+                                                          }`}>
+                                                            {i.estatus}
+                                                          </span>
+                                                        </td>
+                                                      </tr>
+                                                    );
+                                                  })}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })
+                                )}
                               </div>
+
+                              {/* Acciones Consolidadas del Mes */}
                               {pendingInsts.length > 0 && (
-                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 mt-4">
                                   <div className="text-xs text-slate-500 font-bold">
-                                    Total a descontar este mes:{' '}
+                                    Total a descontar este mes ({pendingInsts.length} cuotas pendientes):{' '}
                                     <strong className="text-slate-800 font-mono text-sm">${pendingInsts.reduce((s, i) => s + i.monto_usd, 0).toFixed(2)}</strong>
                                     {' / '}
                                     <strong className="text-[#E53935] font-mono text-sm">Bs. {pendingInsts.reduce((s, i) => s + i.monto_usd * bcvRate, 0).toFixed(2)}</strong>
@@ -3940,7 +4051,7 @@ export default function App() {
                             <div className="flex items-center justify-between">
                               <div>
                                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Resumen Financiero Agrupado por Mes</h4>
-                                <p className="text-[10px] text-slate-400 mt-0.5">Ventas del mes: {activeMonthFilter} &middot; {monthlyTx.length} transacciones</p>
+                                <p className="text-[10px] text-slate-400 mt-0.5">Ventas del mes: {activeM} &middot; {monthlyTx.length} transacciones</p>
                               </div>
                               <span className="text-xs font-black text-[#002855] bg-blue-50 border border-blue-200 rounded-full px-3 py-1">Total Comprado Mes: ${monthlyGrandTotal.toFixed(2)}</span>
                             </div>
