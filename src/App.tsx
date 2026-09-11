@@ -2773,7 +2773,7 @@ export default function App() {
                     {currentWorker ? (
                       <>
                         {/* ── V2: Vista Mobile con Bottom Nav ── */}
-                        <div className="lg:hidden -mx-4 -mb-4 min-h-screen">
+                        <div className="lg:hidden fixed inset-0 z-30 bg-slate-50 overflow-hidden">
                           <WorkerMobileView
                             worker={{
                               id: currentWorker.id,
@@ -3180,7 +3180,7 @@ export default function App() {
                       return (
                         <>
                           {/* ── V2: Vista Mobile Proveedor con Bottom Nav ── */}
-                          <div className="lg:hidden -mx-4 -mb-4 min-h-screen">
+                          <div className="lg:hidden fixed inset-0 z-30 bg-slate-50 overflow-hidden">
                             <ProviderMobileView
                               provider={{
                                 id: currentProvider.id,
