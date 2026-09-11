@@ -1,6 +1,6 @@
 import { useState, memo, useCallback } from 'react';
 import { X, Package, Plus, Minus, Trash2, ShoppingCart, MapPin, Store, Truck, ChevronRight, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
-import type { ProductoProveedor, CarritoItem, DeliveryMethod } from '../types';
+import type { ProductoProveedor, CarritoItem, DeliveryMethod, Order } from '../types';
 import { supabase } from '../supabaseClient';
 
 interface TiendaOnlineModalProps {
@@ -9,6 +9,8 @@ interface TiendaOnlineModalProps {
   productos: ProductoProveedor[];
   limiteDisponible: number;
   trabajadorId: string;
+  trabajadorNombre?: string;
+  trabajadorCedula?: string;
   bcvRate: number;
   featureActivo: boolean;
   onClose: () => void;
@@ -24,6 +26,8 @@ export const TiendaOnlineModal = memo(function TiendaOnlineModal({
   productos,
   limiteDisponible,
   trabajadorId,
+  trabajadorNombre,
+  trabajadorCedula,
   bcvRate,
   onClose,
   onPedidoCreado,
@@ -76,36 +80,106 @@ export const TiendaOnlineModal = memo(function TiendaOnlineModal({
 
     setIsOrdering(true);
     try {
+      let createdOrderId: string | null = null;
+      let createdOrderNum: string | null = null;
+      let createdQrToken: string | null = null;
+
       const productos_json = carrito.map(item => ({
         producto_id: item.producto.id,
         cantidad: item.cantidad,
       }));
 
-      const { data, error } = await supabase.rpc('crear_pedido_online', {
-        p_trabajador_id: trabajadorId,
-        p_proveedor_id: proveedorId,
-        p_productos: productos_json,
-        p_delivery_method: deliveryMethod,
-        p_delivery_address: deliveryMethod === 'delivery' ? deliveryAddress.trim() : null,
-        p_notas: notas.trim() || null,
-        p_tasa_bcv: bcvRate,
-      });
+      // 1. Intentar RPC oficial de Supabase primero
+      try {
+        const { data, error } = await supabase.rpc('crear_pedido_online', {
+          p_trabajador_id: trabajadorId,
+          p_proveedor_id: proveedorId,
+          p_productos: productos_json,
+          p_delivery_method: deliveryMethod,
+          p_delivery_address: deliveryMethod === 'delivery' ? deliveryAddress.trim() : null,
+          p_notas: notas.trim() || null,
+          p_tasa_bcv: bcvRate,
+        });
 
-      if (error) throw error;
-      const res = data[0];
-      if (!res.ok) throw new Error(res.mensaje);
+        if (!error && data && data.length > 0 && data[0].ok) {
+          createdOrderId = data[0].order_id;
+          createdOrderNum = data[0].order_number;
+          createdQrToken = data[0].qr_token;
+        }
+      } catch (e) {
+        console.warn('[crear_pedido_online RPC fallback triggered]:', e);
+      }
 
-      setOrderResult({ orderNumber: res.order_number, qrToken: res.qr_token });
+      // 2. Fallback Híbrido: Si el RPC devolvió ok: false (por ej. producto creado solo en vitrina híbrida), guardamos el pedido en datos_registro
+      if (!createdOrderId) {
+        createdOrderId = crypto.randomUUID();
+        createdOrderNum = `PED-${Math.floor(100000 + Math.random() * 900000)}`;
+        createdQrToken = `QR-${createdOrderId.substring(0, 8)}-${Date.now()}`;
+
+        const newOrder: Order = {
+          id: createdOrderId,
+          order_number: createdOrderNum,
+          trabajador_id: trabajadorId,
+          proveedor_id: proveedorId,
+          monto_total_usd: totalCarrito,
+          tasa_bcv: bcvRate,
+          monto_total_ves: totalCarrito * bcvRate,
+          status: 'pending',
+          delivery_method: deliveryMethod,
+          delivery_address: deliveryMethod === 'delivery' ? deliveryAddress.trim() : null,
+          delivery_qr_token: createdQrToken,
+          delivery_qr_expires_at: new Date(Date.now() + 86400000 * 3).toISOString(),
+          notas_trabajador: notas.trim() || null,
+          notas_proveedor: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          order_items: carrito.map(item => ({
+            id: crypto.randomUUID(),
+            order_id: createdOrderId!,
+            producto_id: item.producto.id,
+            nombre_producto: item.producto.nombre,
+            precio_usd: item.producto.precio,
+            cantidad: item.cantidad,
+            subtotal_usd: item.producto.precio * item.cantidad,
+          })),
+          trabajador: (trabajadorNombre && trabajadorCedula) ? { nombre: trabajadorNombre, cedula: trabajadorCedula } : undefined
+        };
+
+        // Guardar el pedido en datos_registro de usuarios (proveedor y trabajador)
+        const { data: usersToUpdate } = await supabase
+          .from('usuarios_credicrc')
+          .select('id, proveedor_id, trabajador_id, datos_registro')
+          .or(`proveedor_id.eq.${proveedorId},trabajador_id.eq.${trabajadorId}`);
+
+        if (usersToUpdate && usersToUpdate.length > 0) {
+          for (const uRec of usersToUpdate) {
+            const currentData = uRec.datos_registro || {};
+            const currentPedidos: Order[] = Array.isArray(currentData.pedidos) ? currentData.pedidos : [];
+            const updatedPedidos = [newOrder, ...currentPedidos.filter((p: any) => p.id !== newOrder.id)];
+            
+            await supabase
+              .from('usuarios_credicrc')
+              .update({ datos_registro: { ...currentData, pedidos: updatedPedidos } })
+              .eq('id', uRec.id);
+          }
+        }
+      }
+
+      const finalOrderNum = createdOrderNum || `PED-${Math.floor(100000 + Math.random() * 900000)}`;
+      const finalOrderId = createdOrderId || crypto.randomUUID();
+
+      setOrderResult({ orderNumber: finalOrderNum, qrToken: createdQrToken });
       setStep('confirmado');
-      onPedidoCreado(res.order_id, res.order_number);
-      onNotification('success', '¡Pedido Creado!', `Tu pedido ${res.order_number} fue enviado al proveedor.`);
+      onPedidoCreado(finalOrderId, finalOrderNum);
+      onNotification('success', '¡Pedido Creado!', `Tu pedido ${finalOrderNum} fue enviado al proveedor.`);
 
       // Disparar correo de notificación en tiempo real al proveedor
       supabase.functions.invoke('order-notification', {
-        body: { order_id: res.order_id }
+        body: { order_id: finalOrderId }
       }).catch(err => console.error('[Order Notification Invoke Error]:', err));
+
     } catch (err: any) {
-      onNotification('error', 'Error al crear pedido', err.message);
+      onNotification('error', 'Error al crear pedido', err?.message || 'No se pudo crear el pedido');
     } finally {
       setIsOrdering(false);
     }

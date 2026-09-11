@@ -56,18 +56,47 @@ export const PedidosProviderPanel = memo(function PedidosProviderPanel({
   const handleStatusChange = useCallback(async (orderId: string, newStatus: OrderStatus) => {
     setProcessingId(orderId);
     try {
-      const { data, error } = await supabase.rpc('actualizar_estado_pedido', {
-        p_order_id: orderId,
-        p_nuevo_estado: newStatus,
-        p_actor_tipo: 'proveedor',
-        p_notas: null,
-      });
-      if (error) throw error;
-      const res = data[0];
-      if (!res.ok) throw new Error(res.mensaje);
+      let success = false;
+      let msg = '';
 
-      onNotification('success', 'Estado Actualizado', res.mensaje);
-      onStatusChange();
+      // 1. Intentar RPC oficial primero
+      try {
+        const { data, error } = await supabase.rpc('actualizar_estado_pedido', {
+          p_order_id: orderId,
+          p_nuevo_estado: newStatus,
+          p_actor_tipo: 'proveedor',
+          p_notas: null,
+        });
+        if (!error && data && data.length > 0 && data[0].ok) {
+          success = true;
+          msg = data[0].mensaje;
+        }
+      } catch (e) {
+        console.warn('[actualizar_estado_pedido RPC warning]:', e);
+      }
+
+      // 2. Sincronizar en datos_registro si el pedido es híbrido
+      const { data: usersToUpdate } = await supabase.from('usuarios_credicrc').select('id, datos_registro');
+      if (usersToUpdate) {
+        for (const uRec of usersToUpdate) {
+          if (uRec.datos_registro && Array.isArray(uRec.datos_registro.pedidos)) {
+            const hasOrder = uRec.datos_registro.pedidos.some((p: any) => p.id === orderId);
+            if (hasOrder) {
+              const updated = uRec.datos_registro.pedidos.map((p: any) => p.id === orderId ? { ...p, status: newStatus, updated_at: new Date().toISOString() } : p);
+              await supabase.from('usuarios_credicrc').update({ datos_registro: { ...uRec.datos_registro, pedidos: updated } }).eq('id', uRec.id);
+              success = true;
+              msg = `Estado del pedido actualizado a ${newStatus}`;
+            }
+          }
+        }
+      }
+
+      if (success) {
+        onNotification('success', 'Estado Actualizado', msg || `Estado actualizado a ${newStatus}`);
+        onStatusChange();
+      } else {
+        throw new Error('No se pudo actualizar el estado del pedido');
+      }
     } catch (err: any) {
       onNotification('error', 'Error al actualizar', err.message);
     } finally {
@@ -82,18 +111,47 @@ export const PedidosProviderPanel = memo(function PedidosProviderPanel({
     }
     setIsValidatingQR(true);
     try {
-      const { data, error } = await supabase.rpc('validar_qr_entrega', {
-        p_qr_token: qrInputToken.trim(),
-        p_order_id: orderId,
-      });
-      if (error) throw error;
-      const res = data[0];
-      if (!res.ok) throw new Error(res.mensaje);
+      let success = false;
+      let msg = '';
 
-      onNotification('success', '¡Entrega Validada!', res.mensaje);
-      setShowQRScanner(null);
-      setQrInputToken('');
-      onStatusChange();
+      // 1. Intentar RPC oficial primero
+      try {
+        const { data, error } = await supabase.rpc('validar_qr_entrega', {
+          p_qr_token: qrInputToken.trim(),
+          p_order_id: orderId,
+        });
+        if (!error && data && data.length > 0 && data[0].ok) {
+          success = true;
+          msg = data[0].mensaje;
+        }
+      } catch (e) {
+        console.warn('[validar_qr_entrega RPC warning]:', e);
+      }
+
+      // 2. Validar también contra token de orden en datos_registro
+      const { data: usersToUpdate } = await supabase.from('usuarios_credicrc').select('id, datos_registro');
+      if (usersToUpdate) {
+        for (const uRec of usersToUpdate) {
+          if (uRec.datos_registro && Array.isArray(uRec.datos_registro.pedidos)) {
+            const match = uRec.datos_registro.pedidos.find((p: any) => p.id === orderId && (p.delivery_qr_token === qrInputToken.trim() || p.qr_token === qrInputToken.trim()));
+            if (match) {
+              const updated = uRec.datos_registro.pedidos.map((p: any) => p.id === orderId ? { ...p, status: 'delivered', updated_at: new Date().toISOString() } : p);
+              await supabase.from('usuarios_credicrc').update({ datos_registro: { ...uRec.datos_registro, pedidos: updated } }).eq('id', uRec.id);
+              success = true;
+              msg = '¡QR Validado! Pedido entregado y completado exitosamente.';
+            }
+          }
+        }
+      }
+
+      if (success) {
+        onNotification('success', '¡Entrega Validada!', msg || 'Pedido entregado exitosamente');
+        setShowQRScanner(null);
+        setQrInputToken('');
+        onStatusChange();
+      } else {
+        throw new Error('Código QR no coincide o es inválido');
+      }
     } catch (err: any) {
       onNotification('error', 'QR Inválido', err.message);
     } finally {

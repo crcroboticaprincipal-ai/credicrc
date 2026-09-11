@@ -674,10 +674,15 @@ export const WorkerMobileView = memo(function WorkerMobileView({
           productos={productosProveedor}
           limiteDisponible={worker.limite_disponible}
           trabajadorId={worker.id}
+          trabajadorNombre={worker.nombre}
+          trabajadorCedula={worker.cedula}
           bcvRate={bcvRate}
           featureActivo={true}
           onClose={() => setShowTienda(null)}
-          onPedidoCreado={(_id, num) => { onNotification('success', '¡Pedido creado!', `Pedido ${num} enviado.`); }}
+          onPedidoCreado={(_id, num) => {
+            onRefresh();
+            onNotification('success', '¡Pedido creado!', `Pedido ${num} enviado.`);
+          }}
           onNotification={onNotification}
         />
       )}

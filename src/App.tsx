@@ -1331,7 +1331,23 @@ export default function App() {
       userProds.forEach(p => allProdsMap.set(p.id, p));
       setProductos(Array.from(allProdsMap.values()));
 
-      if (ordRes.data) setOrders(ordRes.data.map((o: any) => ({ ...o, monto_total_usd: parseFloat(o.monto_total_usd) })));
+      // Combinar pedidos de la tabla orders y los guardados en datos_registro de usuarios
+      const tableOrders: Order[] = (ordRes.data || []).map((o: any) => ({ ...o, monto_total_usd: parseFloat(o.monto_total_usd) }));
+      const userOrders: Order[] = [];
+      (uRes.data || []).forEach((u: any) => {
+        if (u.datos_registro && Array.isArray(u.datos_registro.pedidos)) {
+          u.datos_registro.pedidos.forEach((po: any) => {
+            userOrders.push({
+              ...po,
+              monto_total_usd: parseFloat(po.monto_total_usd),
+            });
+          });
+        }
+      });
+      const allOrdersMap = new Map<string, Order>();
+      tableOrders.forEach(o => allOrdersMap.set(o.id, o));
+      userOrders.forEach(o => allOrdersMap.set(o.id, o));
+      setOrders(Array.from(allOrdersMap.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
 
       const availableM = Array.from(new Set(pi.map(i => i.fecha_cobro ? i.fecha_cobro.slice(0, 7) : ''))).filter(Boolean).sort().reverse();
       if (availableM.length > 0 && !payrollFilterMonth) setPayrollFilterMonth(availableM[0]);
