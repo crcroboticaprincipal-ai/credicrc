@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import {
   QrCode, Camera, Zap, CheckCircle2, AlertCircle, RefreshCw, TrendingUp, AlertTriangle, Check
 } from 'lucide-react';
@@ -80,6 +81,27 @@ export function ProviderPOSPanel({
   onCalculateAmount,
   onProcessPurchase,
 }: ProviderPOSPanelProps) {
+
+  // Auto-scroll al resultado de la operación en teléfonos móviles cuando se calculan cuotas
+  useEffect(() => {
+    if (validationResult) {
+      const el = document.getElementById('pos-summary-result');
+      if (el) {
+        setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+      }
+    }
+  }, [validationResult]);
+
+  // Enfocar input automáticamente al escanear
+  useEffect(() => {
+    if (scannedWorkerInfo && !posAmount) {
+      const el = document.getElementById('pos-amount-input');
+      if (el) {
+        setTimeout(() => el.focus(), 150);
+      }
+    }
+  }, [scannedWorkerInfo, posAmount]);
+
   return (
     <div className="space-y-4">
       {/* Header del Comercio */}
@@ -150,16 +172,18 @@ export function ProviderPOSPanel({
               </label>
               <div className="flex gap-2">
                 <input
+                  id="pos-amount-input"
                   type="number"
+                  inputMode="decimal"
                   step="0.01"
                   min="1"
                   value={posAmount}
                   onChange={e => {
                     setPosAmount(e.target.value);
-                    setValidationResult(null);
+                    if (validationResult) setValidationResult(null);
                   }}
                   placeholder="0.00"
-                  className="flex-1 bg-slate-50 border border-slate-300 rounded-xl p-3 text-2xl font-black font-mono text-slate-800 focus:outline-none focus:border-[#002855] transition text-center"
+                  className="flex-1 bg-slate-50 border border-slate-300 rounded-xl p-3 text-2xl font-black font-mono text-slate-800 focus:outline-none focus:border-[#002855] focus:ring-2 focus:ring-[#002855]/20 transition text-center"
                 />
               </div>
             </div>
@@ -169,7 +193,7 @@ export function ProviderPOSPanel({
               const pct = scannedWorkerInfo.nivel === 4 ? 0.20 : scannedWorkerInfo.nivel === 3 ? 0.30 : scannedWorkerInfo.nivel === 2 ? 0.35 : 0.40;
               const sugerido = parseFloat(posAmount) * pct;
               return (
-                <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 flex flex-col gap-1">
+                <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 flex flex-col gap-1 animate-fade-in">
                   <div className="flex justify-between items-center font-bold">
                     <span>Inicial Sugerida (Nivel {scannedWorkerInfo.nivel} - {Math.round(pct * 100)}%):</span>
                     <span className="font-mono text-sm">${sugerido.toFixed(2)}</span>
@@ -190,14 +214,20 @@ export function ProviderPOSPanel({
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => { setAplicaInicial(true); setValidationResult(null); }}
+                  onClick={() => {
+                    setAplicaInicial(true);
+                    if (validationResult) setValidationResult(null);
+                  }}
                   className={`flex-1 py-2.5 text-xs font-black rounded-xl border transition ${aplicaInicial ? 'bg-[#002855] text-white border-[#002855]' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
                 >
                   Aplica Inicial
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setAplicaInicial(false); setValidationResult(null); }}
+                  onClick={() => {
+                    setAplicaInicial(false);
+                    if (validationResult) setValidationResult(null);
+                  }}
                   className={`flex-1 py-2.5 text-xs font-black rounded-xl border transition ${!aplicaInicial ? 'bg-[#002855] text-white border-[#002855]' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
                 >
                   Inicial Cero
@@ -215,7 +245,10 @@ export function ProviderPOSPanel({
                   <button
                     key={d}
                     type="button"
-                    onClick={() => { setPosDays(d); setValidationResult(null); }}
+                    onClick={() => {
+                      setPosDays(d);
+                      if (validationResult) setValidationResult(null);
+                    }}
                     className={`flex-1 py-2.5 text-xs font-black rounded-xl border transition ${posDays === d ? 'bg-[#002855] text-white border-[#002855]' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
                   >
                     {d} Días
@@ -229,7 +262,7 @@ export function ProviderPOSPanel({
               <button
                 type="button"
                 onClick={onCancel}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-3 px-3 rounded-xl transition"
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-3.5 px-3 rounded-xl transition"
               >
                 Cancelar
               </button>
@@ -237,7 +270,7 @@ export function ProviderPOSPanel({
                 type="button"
                 onClick={onCalculateAmount}
                 disabled={isValidating || !posAmount || parseFloat(posAmount) <= 0}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black py-3 px-3 rounded-xl shadow transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-black py-3.5 px-3 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 {isValidating ? (
                   <><RefreshCw size={14} className="animate-spin" />Calculando...</>
@@ -252,7 +285,7 @@ export function ProviderPOSPanel({
 
       {/* ── PASO 3: RESUMEN Y PROCESAMIENTO DE LA VENTA ── */}
       {(validationResult || isValidating) && (
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div id="pos-summary-result" className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4 scroll-mt-4">
           <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
             Resumen de la Operación
           </h4>
@@ -378,7 +411,7 @@ export function ProviderPOSPanel({
                     <button
                       type="button"
                       onClick={onCancel}
-                      className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-3 px-3 rounded-xl transition"
+                      className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-3.5 px-3 rounded-xl transition"
                     >
                       Cancelar
                     </button>
@@ -386,7 +419,7 @@ export function ProviderPOSPanel({
                       type="button"
                       disabled={isProcessingPurchase || (aplicaInicial && validationResult.monto_inicial_calculado > 0 && !inicialConfirmada)}
                       onClick={onProcessPurchase}
-                      className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-emerald-600 hover:to-green-500 text-white text-xs font-extrabold py-3.5 px-4 rounded-xl shadow-lg transition flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-emerald-600 hover:to-green-500 active:scale-[0.98] text-white text-xs font-extrabold py-3.5 px-4 rounded-xl shadow-lg transition flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {isProcessingPurchase ? (
                         <><RefreshCw size={14} className="animate-spin" />Registrando...</>

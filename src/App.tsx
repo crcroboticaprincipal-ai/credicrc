@@ -2664,7 +2664,7 @@ export default function App() {
       </header>
 
       {/* ── MAIN ── */}
-      <main className="flex-1 p-4 md:p-6 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <main className={`flex-1 w-full max-w-7xl mx-auto ${activeRole === 'inicio' || activeRole === 'admin' ? 'p-4 md:p-6 grid grid-cols-1 lg:grid-cols-4 gap-6' : 'p-0 lg:p-6 grid grid-cols-1 lg:grid-cols-4 gap-6'}`}>
 
         {isLoading ? (
           <div className="col-span-1 lg:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-6 py-6">
@@ -4496,7 +4496,7 @@ export default function App() {
             </div>
 
             {/* ── BARRA LATERAL: NOTIFICACIONES ── */}
-            <div className="col-span-1 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between max-h-[85vh] overflow-hidden">
+            <div className="hidden lg:flex col-span-1 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex-col justify-between max-h-[85vh] overflow-hidden">
               <div className="flex flex-col h-full overflow-hidden">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
                   <div className="flex items-center gap-1.5"><Bell className="text-[#64B5F6] h-4 w-4"/><h4 className="text-xs font-bold text-slate-700 uppercase tracking-widest">Actividad</h4></div>
