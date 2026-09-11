@@ -98,10 +98,10 @@ export const ProviderMobileView = memo(function ProviderMobileView({
   };
 
   return (
-    <div className="flex flex-col bg-slate-50" style={{ height: '100dvh', overflow: 'hidden' }}>
+    <div className="flex flex-col bg-slate-50 min-h-screen relative" style={{ touchAction: 'pan-y' }}>
 
       {/* ─── HEADER FIJO ─── */}
-      <header className="bg-gradient-to-r from-[#002855] to-[#073B73] text-white px-4 flex-shrink-0"
+      <header className="bg-gradient-to-r from-[#002855] to-[#073B73] text-white px-4 flex-shrink-0 sticky top-0 z-30 shadow-md"
         style={{ paddingTop: `calc(env(safe-area-inset-top, 0px) + 12px)`, paddingBottom: '12px' }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -122,8 +122,8 @@ export const ProviderMobileView = memo(function ProviderMobileView({
         </div>
       </header>
 
-      {/* ─── ÁREA PRINCIPAL ─── */}
-      <main className="flex-1 overflow-y-auto modal-scroll pb-28">
+      {/* ─── ÁREA PRINCIPAL (scroll fluido) ─── */}
+      <main className="flex-1 overflow-y-auto modal-scroll pb-36 touch-pan-y">
 
         {/* ════ TAB: POS ════ */}
         {activeTab === 'pos' && (

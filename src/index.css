@@ -125,10 +125,11 @@ button.icon-only {
   border-radius: 12px;
 }
 
-/* ── MODALES: SCROLL NATIVO MÓVIL ────────────────────────────────── */
+/* ── MODALES Y VISTAS MÓVILES: SCROLL NATIVO Y FLUIDO ────────────────── */
 .modal-scroll {
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
 }
 
 /* ── MOBILE BOTTOM NAV BAR ───────────────────────────────────── */
