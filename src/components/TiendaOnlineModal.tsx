@@ -173,9 +173,31 @@ export const TiendaOnlineModal = memo(function TiendaOnlineModal({
       onPedidoCreado(finalOrderId, finalOrderNum);
       onNotification('success', '¡Pedido Creado!', `Tu pedido ${finalOrderNum} fue enviado al proveedor.`);
 
-      // Disparar correo de notificación en tiempo real al proveedor
+      // Disparar correo de notificación en tiempo real al proveedor con payload completo
       supabase.functions.invoke('order-notification', {
-        body: { order_id: finalOrderId }
+        body: {
+          order_id: finalOrderId,
+          order: {
+            id: finalOrderId,
+            order_number: finalOrderNum,
+            trabajador_id: trabajadorId,
+            proveedor_id: proveedorId,
+            monto_total_usd: totalCarrito,
+            tasa_bcv: bcvRate,
+            monto_total_ves: totalCarrito * bcvRate,
+            delivery_method: deliveryMethod,
+            delivery_address: deliveryMethod === 'delivery' ? deliveryAddress.trim() : null,
+            notas_trabajador: notas.trim() || null,
+            created_at: new Date().toISOString(),
+            order_items: carrito.map(item => ({
+              nombre_producto: item.producto.nombre,
+              cantidad: item.cantidad,
+              precio_usd: item.producto.precio,
+              subtotal_usd: item.producto.precio * item.cantidad,
+            })),
+            trabajador: (trabajadorNombre && trabajadorCedula) ? { nombre: trabajadorNombre, cedula: trabajadorCedula } : undefined
+          }
+        }
       }).catch(err => console.error('[Order Notification Invoke Error]:', err));
 
     } catch (err: any) {

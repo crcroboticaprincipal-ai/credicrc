@@ -34,8 +34,10 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-    // 1. Obtener datos del pedido con ítems
-    const { data: order, error: orderError } = await supabase
+    let order: any = null;
+
+    // 1. Obtener datos del pedido (probar tabla orders, payload u objeto en datos_registro)
+    const { data: dbOrder } = await supabase
       .from("orders")
       .select(`
         id, order_number, monto_total_usd, monto_total_ves, tasa_bcv,
@@ -48,11 +50,43 @@ serve(async (req) => {
       .eq("id", order_id)
       .maybeSingle();
 
-    if (orderError || !order) {
-      console.error("[order-notification] Pedido no encontrado:", orderError?.message);
+    if (dbOrder) {
+      order = dbOrder;
+    } else if (payload.order) {
+      order = payload.order;
+    } else {
+      const { data: systemUsers } = await supabase.from("usuarios_credicrc").select("datos_registro");
+      if (systemUsers) {
+        for (const u of systemUsers) {
+          if (u.datos_registro && Array.isArray(u.datos_registro.pedidos)) {
+            const found = u.datos_registro.pedidos.find((p: any) => p.id === order_id);
+            if (found) {
+              order = found;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (!order) {
+      console.error("[order-notification] Pedido no encontrado:", order_id);
       return new Response(JSON.stringify({ success: false, error: "Pedido no encontrado" }), {
         status: 200, headers: { ...CORS, "Content-Type": "application/json" }
       });
+    }
+
+    let proveedorNombre = (order.proveedores_aliados as any)?.nombre || order.proveedor?.nombre || "Comercio";
+    let trabajadorNombre = (order.trabajadores_crc as any)?.nombre || order.trabajador?.nombre || "Trabajador";
+
+    if (!proveedorNombre || proveedorNombre === "Comercio") {
+      const { data: pRec } = await supabase.from("proveedores_aliados").select("nombre").eq("id", order.proveedor_id || "").maybeSingle();
+      if (pRec?.nombre) proveedorNombre = pRec.nombre;
+    }
+
+    if (!trabajadorNombre || trabajadorNombre === "Trabajador") {
+      const { data: wRec } = await supabase.from("trabajadores_crc").select("nombre").eq("id", order.trabajador_id || "").maybeSingle();
+      if (wRec?.nombre) trabajadorNombre = wRec.nombre;
     }
 
     // 2. Obtener email del proveedor desde usuarios_credicrc
@@ -71,12 +105,18 @@ serve(async (req) => {
       });
     }
 
-    const trabajadorNombre = (order.trabajadores_crc as any)?.nombre || "Trabajador";
-    const proveedorNombre = (order.proveedores_aliados as any)?.nombre || "Comercio";
-    const items = order.order_items || [];
+    const items = (order.order_items || []).map((i: any) => ({
+      nombre_producto: i.nombre_producto || i.nombre || "Producto",
+      cantidad: i.cantidad || 1,
+      subtotal_usd: i.subtotal_usd || (i.precio_usd ? i.precio_usd * i.cantidad : 0)
+    }));
     
-    const montoUsd = parseFloat(order.monto_total_usd).toFixed(2);
-    const montoVes = parseFloat(order.monto_total_ves).toLocaleString("es-VE", { maximumFractionDigits: 2 });
+    const montoTotalUsd = parseFloat(order.monto_total_usd || 0);
+    const tasaBcvVal = parseFloat(order.tasa_bcv || 36.5);
+    const montoTotalVes = parseFloat(order.monto_total_ves || (montoTotalUsd * tasaBcvVal));
+
+    const montoUsd = montoTotalUsd.toFixed(2);
+    const montoVes = montoTotalVes.toLocaleString("es-VE", { maximumFractionDigits: 2 });
     const fechaPedido = new Date(order.created_at || Date.now()).toLocaleDateString("es-VE", {
       day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit"
     });
