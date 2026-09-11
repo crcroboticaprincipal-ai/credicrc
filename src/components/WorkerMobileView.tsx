@@ -137,7 +137,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
   };
 
   return (
-    <div className="flex flex-col bg-slate-50 min-h-screen w-full relative">
+    <div className="flex flex-col bg-slate-50 min-h-screen w-full max-w-4xl mx-auto relative shadow-2xl rounded-none md:rounded-3xl border-0 md:border md:border-slate-200 overflow-hidden my-0 md:my-4">
 
       {/* ─── HEADER FIJO ─── */}
       <header className="bg-gradient-to-r from-[#002855] to-[#073B73] text-white px-4 pt-safe-top flex-shrink-0 sticky top-0 z-30 shadow-md"
@@ -513,7 +513,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
       </main>
 
       {/* ─── BOTTOM NAVIGATION BAR ─── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-xl"
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-4xl z-40 bg-white border-t border-slate-200 shadow-xl"
         style={{ paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + 4px)` }}>
         <div className="flex">
           {([

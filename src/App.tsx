@@ -3225,41 +3225,33 @@ export default function App() {
                       );
 
                       return (
-                        <>
-                          {/* ── V2: Vista Mobile Proveedor con Bottom Nav ── */}
-                          <div className="lg:hidden w-full">
-                            <ProviderMobileView
-                              provider={{
-                                id: currentProvider.id,
-                                nombre: currentProvider.nombre,
-                                categoria: currentProvider.categoria,
-                                logo_url: currentProvider.logo_url,
-                                cuenta_enlace: currentProvider.cuenta_enlace,
-                                comision_colegio: parseFloat(String(currentProvider.comision_colegio)),
-                                comision_por_cobrar: undefined,
-                                direccion: currentProvider.direccion,
-                                telefono: currentProvider.telefono,
-                              }}
-                              productos={productos}
-                              orders={orders}
-                              flags={featureFlags}
-                              posSlot={posSlotNode}
-                              onOpenScanner={() => setShowQRScannerModal(true)}
-                              onAddProduct={handleAddProducto}
-                              onToggleProduct={handleToggleProducto}
-                              onToggleStock={handleToggleStock}
-                              onDeleteProduct={handleDeleteProducto}
-                              onOrderStatusChange={fetchData}
-                              onNotification={addNotification}
-                              onLogout={handleLogout}
-                            />
-                          </div>
-
-                          {/* ── VISTA DESKTOP: POS ── */}
-                          <div className="hidden lg:block space-y-6">
-                            {posSlotNode}
-                          </div>
-                        </>
+                        <div className="w-full">
+                          <ProviderMobileView
+                            provider={{
+                              id: currentProvider.id,
+                              nombre: currentProvider.nombre,
+                              categoria: currentProvider.categoria,
+                              logo_url: currentProvider.logo_url,
+                              cuenta_enlace: currentProvider.cuenta_enlace,
+                              comision_colegio: parseFloat(String(currentProvider.comision_colegio)),
+                              comision_por_cobrar: undefined,
+                              direccion: currentProvider.direccion,
+                              telefono: currentProvider.telefono,
+                            }}
+                            productos={productos}
+                            orders={orders}
+                            flags={featureFlags}
+                            posSlot={posSlotNode}
+                            onOpenScanner={() => setShowQRScannerModal(true)}
+                            onAddProduct={handleAddProducto}
+                            onToggleProduct={handleToggleProducto}
+                            onToggleStock={handleToggleStock}
+                            onDeleteProduct={handleDeleteProducto}
+                            onOrderStatusChange={fetchData}
+                            onNotification={addNotification}
+                            onLogout={handleLogout}
+                          />
+                        </div>
                       );
                     })() : null}
 
