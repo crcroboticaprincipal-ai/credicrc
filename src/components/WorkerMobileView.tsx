@@ -137,7 +137,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
   };
 
   return (
-    <div className="flex flex-col bg-slate-50 min-h-screen w-full relative" style={{ touchAction: 'pan-y' }}>
+    <div className="flex flex-col bg-slate-50 min-h-screen w-full relative">
 
       {/* ─── HEADER FIJO ─── */}
       <header className="bg-gradient-to-r from-[#002855] to-[#073B73] text-white px-4 pt-safe-top flex-shrink-0 sticky top-0 z-30 shadow-md"
@@ -165,8 +165,8 @@ export const WorkerMobileView = memo(function WorkerMobileView({
         </div>
       </header>
 
-      {/* ─── ÁREA PRINCIPAL (scroll fluido 60 FPS) ─── */}
-      <main className="flex-1 overflow-y-auto overscroll-contain modal-scroll pb-32 touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
+      {/* ─── ÁREA PRINCIPAL (scroll nativo y fluido en toda la pantalla) ─── */}
+      <main className="flex-1 w-full pb-36">
 
         {/* ════ TAB: INICIO ════ */}
         {activeTab === 'inicio' && (
