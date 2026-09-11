@@ -26,4 +26,5 @@ dist-ssr
 .vercel
 *.mjs
 *.sql
+!supabase/migrations/*.sql
 .env*

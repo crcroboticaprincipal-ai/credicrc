@@ -8,8 +8,12 @@ import {
   Percent, Search, Users, ShieldCheck, Download, Check,
   X, Home, Star, Lock, Upload, Eye, Zap,
   Award, ArrowUp, ArrowDown, Clock, AlertTriangle, Camera, CameraOff,
-  Building2, Banknote, Phone, MapPin, BadgeCheck, ImagePlus
+  Building2, Banknote, Phone, MapPin, BadgeCheck, ImagePlus, ToggleLeft
 } from 'lucide-react';
+import { CATEGORIAS_PROVEEDOR, type CategoriaProveedor, type FeatureFlag, type ProductoProveedor, type Order } from './types';
+import { FeatureFlagPanel } from './components/FeatureFlagPanel';
+import { WorkerMobileView } from './components/WorkerMobileView';
+import { ProviderMobileView } from './components/ProviderMobileView';
 
 // ─── HOOK: DISIPADOR DE PETICIONES DUPLICADAS (Alta Concurrencia) ─────────────
 // Evita que botones críticos se disparen más de una vez en 800ms
@@ -142,7 +146,7 @@ interface Worker extends DBWorker {
   nivel_credito: number; pagos_puntuales_consecutivos: number; qr_bloqueado: boolean;
 }
 interface Provider {
-  id: string; nombre: string; categoria: 'Carnes' | 'Víveres';
+  id: string; nombre: string; categoria: CategoriaProveedor;
   cuenta_enlace: string; comision_colegio: string | number; created_at: string;
   // Campos extendidos del perfil del comercio
   razon_social?: string; rif?: string; direccion?: string; telefono?: string;
@@ -197,7 +201,7 @@ interface UserAccount {
   rol: 'trabajador' | 'proveedor' | 'admin' | 'tesoreria';
   trabajador_id: string | null; proveedor_id: string | null; aprobado: boolean;
   datos_registro?: {
-    cedula?: string; cargo?: string; categoria?: 'Carnes' | 'Víveres'; cuenta_enlace?: string;
+    cedula?: string; cargo?: string; categoria?: CategoriaProveedor; cuenta_enlace?: string;
     razon_social?: string; rif?: string; direccion?: string;
     banco_cuenta?: string; pago_movil_banco?: string; pago_movil_cedula?: string; pago_movil_telefono?: string;
   } | null;
@@ -722,7 +726,7 @@ interface AuthCardProps {
   authRoleSelection: 'trabajador' | 'proveedor'; setAuthRoleSelection: (v: 'trabajador' | 'proveedor') => void;
   authWorkerCedula: string; setAuthWorkerCedula: (v: string) => void;
   authWorkerCargo: CargoCRC; setAuthWorkerCargo: (v: CargoCRC) => void;
-  authProviderCategoria: 'Carnes' | 'Víveres'; setAuthProviderCategoria: (v: 'Carnes' | 'Víveres') => void;
+  authProviderCategoria: CategoriaProveedor; setAuthProviderCategoria: (v: CategoriaProveedor) => void;
   authProviderCuenta: string; setAuthProviderCuenta: (v: string) => void;
   // Campos extendidos Módulo 4A
   authProviderRazonSocial: string; setAuthProviderRazonSocial: (v: string) => void;
@@ -1046,7 +1050,7 @@ export default function App() {
   const [authRoleSelection, setAuthRoleSelection] = useState<'trabajador' | 'proveedor'>('trabajador');
   const [authWorkerCedula, setAuthWorkerCedula] = useState('');
   const [authWorkerCargo, setAuthWorkerCargo] = useState<CargoCRC>('Docente');
-  const [authProviderCategoria, setAuthProviderCategoria] = useState<'Carnes' | 'Víveres'>('Carnes');
+  const [authProviderCategoria, setAuthProviderCategoria] = useState<CategoriaProveedor>('Carnes');
   // authProviderCuenta reemplazado por authProviderBancoCuenta en el nuevo flujo de registro Módulo 4A
   // ─ Campos extendidos de registro de proveedor (Módulo 4A)
   const [authProviderRazonSocial, setAuthProviderRazonSocial] = useState('');
@@ -1156,19 +1160,19 @@ export default function App() {
   const [isRegisteringWorker, setIsRegisteringWorker] = useState(false);
   const [showAddProviderModal, setShowAddProviderModal] = useState(false);
   const [newProviderNombre, setNewProviderNombre] = useState('');
-  const [newProviderCategoria, setNewProviderCategoria] = useState<'Carnes' | 'Víveres'>('Carnes');
+  const [newProviderCategoria, setNewProviderCategoria] = useState<CategoriaProveedor>('Carnes');
   const [newProviderCuenta, setNewProviderCuenta] = useState('');
   const [newProviderComision, setNewProviderComision] = useState('4.0');
   const [isRegisteringProvider, setIsRegisteringProvider] = useState(false);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [editProviderNombre, setEditProviderNombre] = useState('');
-  const [editProviderCategoria, setEditProviderCategoria] = useState<'Carnes' | 'Víveres'>('Carnes');
+  const [editProviderCategoria, setEditProviderCategoria] = useState<CategoriaProveedor>('Carnes');
   const [editProviderCuenta, setEditProviderCuenta] = useState('');
   const [editProviderComision, setEditProviderComision] = useState('4.0');
   const [isSavingProvider, setIsSavingProvider] = useState(false);
   const [isDeletingProviderId, setIsDeletingProviderId] = useState<string | null>(null);
   const [processingDirectPayId, setProcessingDirectPayId] = useState<string | null>(null);
-  const [adminTab, setAdminTab] = useState<'dashboard' | 'workers' | 'payroll' | 'providers' | 'direct-payments' | 'gamification' | 'tesoreria' | 'notificaciones'>('dashboard');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'workers' | 'payroll' | 'providers' | 'direct-payments' | 'gamification' | 'tesoreria' | 'notificaciones' | 'feature-flags'>('dashboard');
   // ─ Perfil de Comercio (Módulo 4B)
   const [editProviderDireccion, setEditProviderDireccion] = useState('');
   const [editProviderTelefono, setEditProviderTelefono] = useState('');
@@ -1228,6 +1232,11 @@ export default function App() {
     colegio_nombre: 'U.E. Colegio Rafael Castillo'
   });
 
+  // ─── ESTADOS V2 ─────────────────────────────────────────────────────────────
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
+  const [productos, setProductos] = useState<ProductoProveedor[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+
   // ─── NOTIFICACIONES ─────────────────────────────────────────────────────────
   const addNotification = useCallback((type: SystemNotification['type'], title: string, message: string) => {
     setNotifications(prev => [{ id: Math.random().toString(), timestamp: new Date(), type, title, message }, ...prev.slice(0, 19)]);
@@ -1248,7 +1257,7 @@ export default function App() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [wRes, pRes, tRes, cRes, uRes, cfgRes, dpRes, liqRes] = await Promise.all([
+      const [wRes, pRes, tRes, cRes, uRes, cfgRes, dpRes, liqRes, ffRes, prodRes, ordRes] = await Promise.all([
         supabase.from('trabajadores_crc').select('*').order('nombre'),
         supabase.from('proveedores_aliados').select('*').order('nombre'),
         supabase.from('transacciones_credicrc').select('*, trabajadores_crc(*), proveedores_aliados(*)').order('fecha_transaccion', { ascending: false }),
@@ -1257,6 +1266,9 @@ export default function App() {
         supabase.from('configuracion_inicio').select('*').eq('id', 1).maybeSingle(),
         supabase.from('pagos_directos_credicrc').select('*, cronograma_cuotas(*), trabajadores_crc(*)').order('created_at', { ascending: false }),
         supabase.from('historial_liquidaciones').select('*, proveedores_aliados(nombre)').order('fecha_corte', { ascending: false }),
+        supabase.from('feature_flags').select('*').order('nombre_modulo'),
+        supabase.from('productos_proveedor').select('*').order('created_at', { ascending: false }),
+        supabase.from('orders').select('*, order_items(*), trabajador:trabajadores_crc(nombre, cedula)').order('created_at', { ascending: false }),
       ]);
 
       const pw = (wRes.data || []).map((w: DBWorker): Worker => ({
@@ -1294,6 +1306,9 @@ export default function App() {
       if (cfgRes.data) setLandingConfig(cfgRes.data);
       setDirectPayments((dpRes.data || []) as DirectPayment[]);
       setLiquidaciones((liqRes.data || []) as LiquidacionRecord[]);
+      if (ffRes.data) setFeatureFlags(ffRes.data as FeatureFlag[]);
+      if (prodRes.data) setProductos(prodRes.data.map((p: any) => ({ ...p, precio: parseFloat(p.precio) })));
+      if (ordRes.data) setOrders(ordRes.data.map((o: any) => ({ ...o, monto_total_usd: parseFloat(o.monto_total_usd) })));
 
       const pending = pi.filter(i => i.estatus === 'Pendiente').map(i => i.fecha_cobro);
       if (pending.length > 0 && !payrollFilterDate) setPayrollFilterDate(pending[0]);
@@ -1381,6 +1396,58 @@ export default function App() {
       setDeferredPrompt(null);
     }
   };
+
+  // ─── V2 HANDLERS: FEATURE FLAGS & PRODUCTOS ─────────────────────────────────
+  const handleToggleFeatureFlag = useCallback(async (moduloId: string, activo: boolean) => {
+    setFeatureFlags(prev => prev.map(f => f.modulo_id === moduloId ? { ...f, activo } : f));
+    try {
+      const { error } = await supabase.from('feature_flags').update({ activo, updated_at: new Date().toISOString() }).eq('modulo_id', moduloId);
+      if (error) throw error;
+      addNotification('success', 'Módulo Actualizado', `Módulo '${moduloId}' ${activo ? 'activado' : 'desactivado'}.`);
+    } catch (err: any) {
+      addNotification('error', 'Error actualizando módulo', err.message);
+      fetchData();
+    }
+  }, [addNotification, fetchData]);
+
+  const handleAddProducto = useCallback(async (data: { nombre: string; descripcion: string; precio: string; imagen?: File }) => {
+    if (!activeProviderId) return;
+    let imagen_url: string | null = null;
+    if (data.imagen) {
+      const fileExt = data.imagen.name.split('.').pop();
+      const fileName = `${activeProviderId}_${Date.now()}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage.from('productos').upload(fileName, data.imagen);
+      if (!uploadError) {
+        const { data: urlData } = supabase.storage.from('productos').getPublicUrl(fileName);
+        imagen_url = urlData.publicUrl;
+      }
+    }
+    const { data: resData, error } = await supabase.rpc('agregar_producto_proveedor', {
+      p_proveedor_id: activeProviderId,
+      p_nombre: data.nombre,
+      p_descripcion: data.descripcion || null,
+      p_precio: parseFloat(data.precio),
+      p_imagen_url: imagen_url,
+    });
+    if (error) throw error;
+    if (resData && resData[0] && !resData[0].ok) throw new Error(resData[0].mensaje);
+    fetchData();
+  }, [activeProviderId, fetchData]);
+
+  const handleToggleProducto = useCallback(async (productoId: string, activo: boolean) => {
+    await supabase.from('productos_proveedor').update({ activo, updated_at: new Date().toISOString() }).eq('id', productoId);
+    fetchData();
+  }, [fetchData]);
+
+  const handleToggleStock = useCallback(async (productoId: string, disponible: boolean) => {
+    await supabase.from('productos_proveedor').update({ stock_disponible: disponible, updated_at: new Date().toISOString() }).eq('id', productoId);
+    fetchData();
+  }, [fetchData]);
+
+  const handleDeleteProducto = useCallback(async (productoId: string) => {
+    await supabase.from('productos_proveedor').delete().eq('id', productoId);
+    fetchData();
+  }, [fetchData]);
 
   // ─── PUSH NOTIFICATIONS REGISTER HOOK ───
   useEffect(() => {
@@ -2698,7 +2765,56 @@ export default function App() {
 
                     {currentWorker ? (
                       <>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* ── V2: Vista Mobile con Bottom Nav ── */}
+                        <div className="lg:hidden -mx-4 -mb-4" style={{ height: 'calc(100dvh - 120px)', overflow: 'hidden' }}>
+                          <WorkerMobileView
+                            worker={{
+                              id: currentWorker.id,
+                              nombre: currentWorker.nombre,
+                              cedula: currentWorker.cedula,
+                              cargo: currentWorker.cargo,
+                              limite_total: currentWorker.limite_total,
+                              limite_disponible: currentWorker.limite_disponible,
+                              nivel_credito: currentWorker.nivel_credito,
+                              pagos_puntuales_consecutivos: currentWorker.pagos_puntuales_consecutivos,
+                              qr_bloqueado: currentWorker.qr_bloqueado,
+                              cupo_linea_domestica: (currentWorker as any).cupo_linea_domestica ?? 0,
+                              cupo_linea_domestica_usado: (currentWorker as any).cupo_linea_domestica_usado ?? 0,
+                              cupo_avance_efectivo: (currentWorker as any).cupo_avance_efectivo ?? 0,
+                              cupo_avance_efectivo_usado: (currentWorker as any).cupo_avance_efectivo_usado ?? 0,
+                            }}
+                            installments={installments.filter(i => i.transacciones_credicrc?.trabajadores_crc?.id === currentWorker.id || (i as any).trabajador_id === currentWorker.id)}
+                            transactions={transactions.filter(t => t.trabajador_id === currentWorker.id)}
+                            providers={providers}
+                            productos={productos}
+                            orders={orders}
+                            flags={featureFlags}
+                            bcvRate={bcvRate}
+                            activeQR={activeQR}
+                            qrCountdown={qrCountdown}
+                            isGeneratingQR={isGeneratingQR}
+                            isUploadingPayment={isUploadingPayment}
+                            onGenerateQR={handleGenerateQR}
+                            onSubmitDirectPayment={async (data) => {
+                              setSelectedInstallmentId(data.cuotaId);
+                              setDirectPayAmount(data.monto);
+                              setDirectPayRef(data.ref);
+                              setDirectPayType(data.tipo as any);
+                              setDirectPayBank(data.banco);
+                              setDirectPayCedula(data.cedula);
+                              setDirectPayPhone(data.telefono);
+                              setDirectPayFile(data.file);
+                              await handleSubmitDirectPayment();
+                            }}
+                            onLogout={handleLogout}
+                            onNotification={addNotification}
+                            onRefresh={fetchData}
+                          />
+                        </div>
+
+                        {/* ── VISTA DESKTOP: Layout original con grid ── */}
+                        <div className="hidden lg:block">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                           <WorkerCreditCard worker={currentWorker}/>
 
                           {/* Crédito disponible */}
@@ -2990,8 +3106,9 @@ export default function App() {
                             </div>
                           </div>
                         )}
-                      </>
-                    ) : null}
+                      </div>
+                    </>
+                  ) : null}
                   </div>
                 ) : <AuthCard role="trabajador" {...authCardProps}/>
               )}
@@ -3014,7 +3131,38 @@ export default function App() {
                     )}
 
                     {currentProvider ? (
-                      <div className="space-y-6">
+                      <>
+                        {/* ── V2: Vista Mobile Proveedor con Bottom Nav ── */}
+                        <div className="lg:hidden -mx-4 -mb-4" style={{ height: 'calc(100dvh - 120px)', overflow: 'hidden' }}>
+                          <ProviderMobileView
+                            provider={{
+                              id: currentProvider.id,
+                              nombre: currentProvider.nombre,
+                              categoria: currentProvider.categoria,
+                              logo_url: currentProvider.logo_url,
+                              cuenta_enlace: currentProvider.cuenta_enlace,
+                              comision_colegio: parseFloat(String(currentProvider.comision_colegio)),
+                              comision_por_cobrar: undefined,
+                              direccion: currentProvider.direccion,
+                              telefono: currentProvider.telefono,
+                            }}
+                            productos={productos}
+                            orders={orders}
+                            flags={featureFlags}
+                            posSlot={null}
+                            onAddProduct={handleAddProducto}
+                            onToggleProduct={handleToggleProducto}
+                            onToggleStock={handleToggleStock}
+                            onDeleteProduct={handleDeleteProducto}
+                            onOrderStatusChange={fetchData}
+                            onNotification={addNotification}
+                            onLogout={handleLogout}
+                          />
+                        </div>
+
+                        {/* ── VISTA DESKTOP: POS original ── */}
+                        <div className="hidden lg:block">
+                          <div className="space-y-6">
                         {/* POS Principal */}
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                           {/* Panel izquierdo: escanear + ingresar monto */}
@@ -3586,7 +3734,9 @@ export default function App() {
                           )}
                         </div>
                       </div>
-                    ) : null}
+                    </div>
+                  </>
+                ) : null}
                   </div>
                 ) : <AuthCard role="proveedor" {...authCardProps}/>
               )}
@@ -3647,6 +3797,7 @@ export default function App() {
                           ...(currentUser?.rol === 'admin' ? [
                             { id: 'gamification', label: 'Gamificación', icon: <Award size={13}/> },
                             { id: 'notificaciones', label: 'Notificaciones', icon: <Bell size={13}/> },
+                            { id: 'feature-flags', label: 'Módulos V2', icon: <ToggleLeft size={13}/> },
                           ] : []),
                         ] as { id: typeof adminTab, label: string, icon: any }[]).map(tab => (
 
@@ -3658,6 +3809,11 @@ export default function App() {
                       </div>
 
                       <div className="p-6">
+                        {/* Feature Flags tab V2 */}
+                        {adminTab === 'feature-flags' && (
+                          <FeatureFlagPanel flags={featureFlags} onToggle={handleToggleFeatureFlag} />
+                        )}
+
                         {/* Dashboard tab */}
                         {adminTab === 'dashboard' && (
                           <div className="space-y-4">
@@ -4093,7 +4249,7 @@ export default function App() {
                                   </div>
                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                     <div><label className="text-[10px] font-bold text-slate-500 block mb-1">NOMBRE</label><input type="text" value={newProviderNombre} onChange={e => setNewProviderNombre(e.target.value)} placeholder="Ej: Carnicería X" className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold"/></div>
-                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CATEGORÍA</label><select value={newProviderCategoria} onChange={e => setNewProviderCategoria(e.target.value as 'Carnes' | 'Víveres')} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold cursor-pointer"><option>Carnes</option><option>Víveres</option></select></div>
+                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CATEGORÍA</label><select value={newProviderCategoria} onChange={e => setNewProviderCategoria(e.target.value as CategoriaProveedor)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold cursor-pointer">{CATEGORIAS_PROVEEDOR.map(c => <option key={c}>{c}</option>)}</select></div>
                                     <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CUENTA BANCARIA</label><input type="text" value={newProviderCuenta} onChange={e => setNewProviderCuenta(e.target.value)} placeholder="Banco: 0102-..." className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold"/></div>
                                     <div><label className="text-[10px] font-bold text-slate-500 block mb-1">COMISIÓN (%)</label><input type="number" step="0.1" value={newProviderComision} onChange={e => setNewProviderComision(e.target.value)} min="1" max="10" className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold"/></div>
                                   </div>
@@ -4113,7 +4269,7 @@ export default function App() {
                                   </div>
                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                     <div><label className="text-[10px] font-bold text-slate-500 block mb-1">NOMBRE</label><input type="text" value={editProviderNombre} onChange={e => setEditProviderNombre(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold"/></div>
-                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CATEGORÍA</label><select value={editProviderCategoria} onChange={e => setEditProviderCategoria(e.target.value as 'Carnes' | 'Víveres')} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold cursor-pointer"><option>Carnes</option><option>Víveres</option></select></div>
+                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CATEGORÍA</label><select value={editProviderCategoria} onChange={e => setEditProviderCategoria(e.target.value as CategoriaProveedor)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold cursor-pointer">{CATEGORIAS_PROVEEDOR.map(c => <option key={c}>{c}</option>)}</select></div>
                                     <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CUENTA BANCARIA</label><input type="text" value={editProviderCuenta} onChange={e => setEditProviderCuenta(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold"/></div>
                                     <div><label className="text-[10px] font-bold text-slate-500 block mb-1">COMISIÓN (%)</label><input type="number" step="0.1" value={editProviderComision} onChange={e => setEditProviderComision(e.target.value)} min="1" max="10" className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold"/></div>
                                   </div>
