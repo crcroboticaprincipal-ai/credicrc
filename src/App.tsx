@@ -1266,7 +1266,7 @@ export default function App() {
         supabase.from('configuracion_inicio').select('*').eq('id', 1).maybeSingle(),
         supabase.from('pagos_directos_credicrc').select('*, cronograma_cuotas(*), trabajadores_crc(*)').order('created_at', { ascending: false }),
         supabase.from('historial_liquidaciones').select('*, proveedores_aliados(nombre)').order('fecha_corte', { ascending: false }),
-        supabase.from('feature_flags').select('*').order('nombre_modulo'),
+        supabase.from('feature_flags').select('*').order('modulo_id'),
         supabase.from('productos_proveedor').select('*').order('created_at', { ascending: false }),
         supabase.from('orders').select('*, order_items(*), trabajador:trabajadores_crc(nombre, cedula)').order('created_at', { ascending: false }),
       ]);
@@ -2609,34 +2609,40 @@ export default function App() {
       {showTermsModal && <TermsAndPoliciesModal onClose={() => setShowTermsModal(false)}/>}
 
       {/* ── NAVBAR ── */}
-      <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm px-4 md:px-8 py-3.5 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div onClick={() => setActiveRole('inicio')} className="shadow-md hover:scale-105 transition duration-300 p-1.5 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer flex items-center justify-center">
-            {!logoError ? <img src="/logo.png" alt="Logo Colegio" className="h-16 w-auto object-contain" onError={() => setLogoError(true)}/> : <SchoolLogo className="h-16 w-auto"/>}
+      <header className="bg-white border-b border-slate-200 shadow-sm px-3 md:px-8 py-2 md:py-3.5 flex flex-col md:flex-row items-center justify-between gap-2.5 md:gap-4 md:sticky md:top-0 z-40">
+        <div className="flex items-center justify-between w-full md:w-auto">
+          <div className="flex items-center gap-2.5 md:gap-4">
+            <div onClick={() => setActiveRole('inicio')} className="shadow-sm hover:scale-105 transition duration-300 p-1 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer flex items-center justify-center">
+              {!logoError ? <img src="/logo.png" alt="Logo Colegio" className="h-10 md:h-16 w-auto object-contain" onError={() => setLogoError(true)}/> : <SchoolLogo className="h-10 md:h-16 w-auto"/>}
+            </div>
+            <div className="border-l border-slate-200 pl-2.5 md:pl-4 cursor-pointer" onClick={() => setActiveRole('inicio')}>
+              <h1 className="text-xl md:text-2xl font-black tracking-tight text-[#002855] flex items-center gap-1">Credi<span className="text-[#E53935]">CRC</span></h1>
+              <p className="text-[9px] md:text-[10px] text-slate-500 tracking-wider font-extrabold uppercase">v2.1 · Ecosistema Financiero</p>
+            </div>
           </div>
-          <div className="border-l border-slate-200 pl-4 cursor-pointer" onClick={() => setActiveRole('inicio')}>
-            <h1 className="text-2xl font-black tracking-tight text-[#002855] flex items-center gap-1">Credi<span className="text-[#E53935]">CRC</span></h1>
-            <p className="text-[10px] text-slate-500 tracking-wider font-extrabold uppercase">v2.1 · Ecosistema Financiero</p>
-          </div>
+          {currentUser && (
+            <div className="md:hidden flex items-center gap-2 bg-[#002855]/5 border border-[#002855]/10 px-2.5 py-1 rounded-lg">
+              <span className="text-xs font-bold text-[#002855]">{currentUser.nombre.split(' ')[0]}</span>
+              <button onClick={handleLogout} className="bg-[#E53935]/10 text-[#E53935] px-2 py-0.5 rounded text-[10px] font-extrabold uppercase">Salir</button>
+            </div>
+          )}
         </div>
-        <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
+        <div className="flex items-center gap-2 md:gap-4 w-full md:w-auto overflow-x-auto no-scrollbar py-0.5 justify-between md:justify-end">
           {isInstallable && (
             <button onClick={handleInstallPWA}
-              className="bg-[#D4AF37] hover:bg-[#E5C158] text-[#002855] px-4 py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-sm transition-all duration-300 hover:scale-105 w-full md:w-auto">
-              <Download size={14} className="animate-bounce"/> Instalar App
+              className="bg-[#D4AF37] hover:bg-[#E5C158] text-[#002855] px-3 py-1.5 md:px-4 md:py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm transition-all duration-300 whitespace-nowrap">
+              <Download size={13} className="animate-bounce"/> Instalar
             </button>
           )}
           {currentUser && (
-            <div className="bg-[#002855]/5 border border-[#002855]/10 rounded-xl px-3.5 py-1.5 flex items-center gap-2 text-xs w-full md:w-auto justify-between md:justify-start">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"/>
-                <span className="text-[#002855] font-bold">{currentUser.nombre}</span>
-                <span className="text-slate-400 font-medium capitalize">({currentUser.rol})</span>
-              </div>
+            <div className="hidden md:flex bg-[#002855]/5 border border-[#002855]/10 rounded-xl px-3.5 py-1.5 items-center gap-2 text-xs">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"/>
+              <span className="text-[#002855] font-bold">{currentUser.nombre}</span>
+              <span className="text-slate-400 font-medium capitalize">({currentUser.rol})</span>
               <button onClick={handleLogout} className="ml-2 bg-[#E53935]/10 text-[#E53935] hover:bg-[#E53935] hover:text-white transition px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase tracking-wider">Salir</button>
             </div>
           )}
-          <div className="bg-slate-100 p-1 rounded-xl border border-slate-200 flex flex-wrap gap-1 w-full md:w-auto shadow-inner">
+          <div className="bg-slate-100 p-1 rounded-xl border border-slate-200 flex gap-1 w-full md:w-auto shadow-inner overflow-x-auto">
             {([
               { role: 'inicio', icon: <Home size={14}/>, label: 'Inicio' },
               { role: 'trabajador', icon: <User size={14}/>, label: 'Trabajador', restricted: ['trabajador', 'admin'] },
@@ -2647,7 +2653,7 @@ export default function App() {
               if (!isVisible) return null;
               return (
                 <button key={item.role} onClick={() => setActiveRole(item.role)}
-                  className={`flex-1 md:flex-initial px-4 py-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all duration-300 ${activeRole === item.role ? 'bg-[#002855] text-white shadow-md' : 'text-slate-600 hover:text-[#002855] hover:bg-slate-200/50'}`}>
+                  className={`flex-1 md:flex-initial px-3 md:px-4 py-1.5 md:py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-300 whitespace-nowrap ${activeRole === item.role ? 'bg-[#002855] text-white shadow-md' : 'text-slate-600 hover:text-[#002855] hover:bg-slate-200/50'}`}>
                   {item.icon}{item.label}
                 </button>
               );
