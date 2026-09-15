@@ -1,24 +1,28 @@
-import { useState, memo } from 'react';
+import { useState, memo, useMemo } from 'react';
 import {
-  Package2, QrCode, Store, User, LogOut, Upload, X, RefreshCw, Camera,
+  Package2, QrCode, Store, LogOut, Upload, X, RefreshCw, Camera,
+  History, Percent, Building2, Save
 } from 'lucide-react';
-import type { Order, ProductoProveedor, FeatureFlag } from '../types';
+import type { Order, ProductoProveedor, FeatureFlag, Transaction, Installment } from '../types';
 import { FeatureGuard } from './FeatureGuard';
 import { PedidosProviderPanel } from './PedidosProviderPanel';
 
-type ProviderTab = 'pos' | 'pedidos' | 'productos' | 'perfil';
+export type ProviderTab = 'pos' | 'pedidos' | 'ventas' | 'productos' | 'perfil';
 
-// ─── Tipos mínimos ─────────────────────────────────────────────────────────────
-interface ProviderMini {
+export interface ProviderMini {
   id: string; nombre: string; categoria: string; logo_url?: string | null;
   cuenta_enlace: string; comision_colegio: number; comision_por_cobrar?: number;
   direccion?: string | null; telefono?: string | null;
+  pago_movil_banco?: string | null; pago_movil_cedula?: string | null; pago_movil_telefono?: string | null;
 }
 
 interface ProviderMobileViewProps {
   provider: ProviderMini;
   productos: ProductoProveedor[];
   orders: Order[];
+  transactions?: Transaction[];
+  installments?: Installment[];
+  bcvRate?: number;
   flags: FeatureFlag[];
   posSlot?: React.ReactNode;
   onOpenScanner?: () => void;
@@ -27,9 +31,19 @@ interface ProviderMobileViewProps {
   onToggleStock: (id: string, disponible: boolean) => Promise<void>;
   onDeleteProduct: (id: string) => Promise<void>;
   onOrderStatusChange: () => void;
+  onSaveProfile?: (data: {
+    direccion: string;
+    telefono: string;
+    pago_movil_banco: string;
+    pago_movil_cedula: string;
+    pago_movil_telefono: string;
+    logoFile?: File | null;
+  }) => Promise<void>;
   onNotification: (type: 'success' | 'error' | 'warning' | 'info', title: string, msg: string) => void;
   onLogout: () => void;
 }
+
+const SALES_PER_PAGE = 5;
 
 // ─── BOTTOM SHEET ─────────────────────────────────────────────────────────────
 function BottomSheet({ open, onClose, title, children }: {
@@ -57,6 +71,9 @@ export const ProviderMobileView = memo(function ProviderMobileView({
   provider,
   productos,
   orders,
+  transactions = [],
+  installments = [],
+  bcvRate = 36.5,
   flags,
   posSlot,
   onOpenScanner,
@@ -65,11 +82,23 @@ export const ProviderMobileView = memo(function ProviderMobileView({
   onToggleStock,
   onDeleteProduct,
   onOrderStatusChange,
+  onSaveProfile,
   onNotification,
   onLogout,
 }: ProviderMobileViewProps) {
   const [activeTab, setActiveTab] = useState<ProviderTab>('pos');
+  const [ventasSubTab, setVentasSubTab] = useState<'ventas' | 'reporte'>('ventas');
   const [showAddProduct, setShowAddProduct] = useState(false);
+  const [salesPage, setSalesPage] = useState(1);
+
+  // Formulario Perfil Comercio
+  const [editDireccion, setEditDireccion] = useState(provider.direccion || '');
+  const [editTelefono, setEditTelefono] = useState(provider.telefono || '');
+  const [editPmBanco, setEditPmBanco] = useState(provider.pago_movil_banco || '');
+  const [editPmCedula, setEditPmCedula] = useState(provider.pago_movil_cedula || '');
+  const [editPmTelefono, setEditPmTelefono] = useState(provider.pago_movil_telefono || '');
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Nuevo producto form
   const [npNombre, setNpNombre] = useState('');
@@ -81,6 +110,44 @@ export const ProviderMobileView = memo(function ProviderMobileView({
   const provProductos = productos.filter(p => p.proveedor_id === provider.id);
   const productosActivos = provProductos.filter(p => p.activo).length;
   const pendingOrders = orders.filter(o => o.proveedor_id === provider.id && o.status === 'pending').length;
+
+  // Transacciones del proveedor
+  const providerTransactions = useMemo(() => {
+    return transactions.filter(t => t.proveedor_id === provider.id);
+  }, [transactions, provider.id]);
+
+  // Meses disponibles para reportes
+  const reportMonths = useMemo(() => {
+    return Array.from(new Set(providerTransactions.map(t => t.fecha_transaccion ? t.fecha_transaccion.slice(0, 7) : ''))).filter(Boolean).sort().reverse();
+  }, [providerTransactions]);
+
+  const [selectedReportMonth, setSelectedReportMonth] = useState<string>('');
+  const activeReportMonth = selectedReportMonth || (reportMonths.length > 0 ? reportMonths[0] : '');
+
+  // Transacciones del mes seleccionado
+  const monthlyTransactions = useMemo(() => {
+    if (!activeReportMonth) return [];
+    return providerTransactions.filter(t => t.fecha_transaccion && t.fecha_transaccion.startsWith(activeReportMonth));
+  }, [providerTransactions, activeReportMonth]);
+
+  // Estadísticas del mes
+  const monthlyStats = useMemo(() => {
+    let bruto = 0;
+    let pagado = 0;
+    let comision = 0;
+
+    monthlyTransactions.forEach(t => {
+      bruto += t.monto_usd;
+      comision += t.comision_monto_usd;
+      const txInsts = installments.filter(i => i.transaccion_id === t.id);
+      const isPaid = txInsts.length > 0 && txInsts.every(i => i.estatus === 'Cobrado' || i.estatus === 'Pagado Directo');
+      if (isPaid) {
+        pagado += t.monto_usd;
+      }
+    });
+
+    return { bruto, pagado, comision, neto: bruto - comision };
+  }, [monthlyTransactions, installments]);
 
   const handleAddProduct = async () => {
     if (!npNombre.trim() || !npPrecio) {
@@ -99,15 +166,36 @@ export const ProviderMobileView = memo(function ProviderMobileView({
     }
   };
 
-  return (
-    <div className="flex flex-col bg-slate-50 min-h-screen w-full max-w-4xl mx-auto relative shadow-2xl rounded-none md:rounded-3xl border-0 md:border md:border-slate-200 overflow-hidden my-0 md:my-4">
+  const handleSaveProfileSubmit = async () => {
+    if (!onSaveProfile) return;
+    setIsSavingProfile(true);
+    try {
+      await onSaveProfile({
+        direccion: editDireccion,
+        telefono: editTelefono,
+        pago_movil_banco: editPmBanco,
+        pago_movil_cedula: editPmCedula,
+        pago_movil_telefono: editPmTelefono,
+        logoFile,
+      });
+      setLogoFile(null);
+      onNotification('success', 'Perfil Actualizado', 'Los datos de tu comercio se han guardado correctamente.');
+    } catch (err: any) {
+      onNotification('error', 'Error al guardar', err?.message || 'No se pudo actualizar el perfil');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
-      {/* ─── HEADER FIJO ─── */}
+  return (
+    <div className="flex flex-col bg-slate-50 min-h-screen w-full max-w-4xl mx-auto relative shadow-2xl rounded-none md:rounded-3xl border-0 md:border md:border-slate-200 my-0 md:my-4">
+
+      {/* ─── HEADER FIJO CON SAFE AREA ─── */}
       <header className="bg-gradient-to-r from-[#002855] to-[#073B73] text-white px-4 flex-shrink-0 sticky top-0 z-30 shadow-md"
         style={{ paddingTop: `calc(env(safe-area-inset-top, 0px) + 12px)`, paddingBottom: '12px' }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center overflow-hidden">
+            <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center overflow-hidden border border-white/20 shadow-inner">
               {provider.logo_url
                 ? <img src={provider.logo_url} alt={provider.nombre} className="w-full h-full object-cover" />
                 : <Store className="text-white h-5 w-5" />}
@@ -124,8 +212,8 @@ export const ProviderMobileView = memo(function ProviderMobileView({
         </div>
       </header>
 
-      {/* ─── ÁREA PRINCIPAL (scroll nativo y fluido en toda la pantalla) ─── */}
-      <main className="flex-1 w-full pb-36">
+      {/* ─── ÁREA PRINCIPAL (PADDING INFERIOR DE SEGURIDAD GARANTIZADO PARA SCROLL) ─── */}
+      <main className="flex-1 w-full pb-36" style={{ paddingBottom: 'calc(8.5rem + env(safe-area-inset-bottom, 24px))' }}>
 
         {/* ════ TAB: POS ════ */}
         {activeTab === 'pos' && (
@@ -188,7 +276,183 @@ export const ProviderMobileView = memo(function ProviderMobileView({
           </div>
         )}
 
-        {/* ════ TAB: PRODUCTOS (VITRINA) ════ */}
+        {/* ════ TAB: VENTAS & REPORTES FINANCIEROS ════ */}
+        {activeTab === 'ventas' && (
+          <div className="p-4 space-y-4">
+            {/* Subtabs Ventas vs Reportes */}
+            <div className="flex bg-slate-200/60 p-1 rounded-2xl gap-1">
+              <button
+                onClick={() => setVentasSubTab('ventas')}
+                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 ${
+                  ventasSubTab === 'ventas' ? 'bg-white text-[#002855] shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                <History size={14} /> Ventas Recientes ({providerTransactions.length})
+              </button>
+              <button
+                onClick={() => setVentasSubTab('reporte')}
+                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 ${
+                  ventasSubTab === 'reporte' ? 'bg-white text-[#002855] shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                <Percent size={14} /> Reporte Financiero
+              </button>
+            </div>
+
+            {ventasSubTab === 'ventas' ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest">Historial de Ventas Financiadas</h4>
+                  <span className="text-[10px] text-slate-400 font-bold">Total: {providerTransactions.length}</span>
+                </div>
+
+                {providerTransactions.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-400 space-y-2">
+                    <History size={36} className="mx-auto opacity-30" />
+                    <p className="text-sm font-bold">No hay ventas registradas en tu comercio</p>
+                  </div>
+                ) : (() => {
+                  const totalPages = Math.ceil(providerTransactions.length / SALES_PER_PAGE);
+                  const paginated = providerTransactions.slice((salesPage - 1) * SALES_PER_PAGE, salesPage * SALES_PER_PAGE);
+                  return (
+                    <div className="space-y-3">
+                      {paginated.map(t => {
+                        const isLiquidado = t.estado_liquidacion_proveedor === 'liquidado';
+                        return (
+                          <div key={t.id} className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-sm">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="text-sm font-black text-slate-800">{t.trabajadores_crc?.nombre || 'Trabajador'}</p>
+                                <p className="text-[10px] text-slate-400 font-semibold">{new Date(t.fecha_transaccion).toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                              </div>
+                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wide ${
+                                isLiquidado ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-blue-50 text-blue-700 border border-blue-200'
+                              }`}>
+                                {isLiquidado ? '✅ Liquidado' : '⏳ Pendiente'}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-xl p-3 text-center border border-slate-100">
+                              <div>
+                                <p className="text-[9px] text-slate-400 font-bold uppercase">Monto Venta</p>
+                                <p className="text-xs font-black font-mono text-[#002855]">${t.monto_usd.toFixed(2)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] text-slate-400 font-bold uppercase">Pago Inicial</p>
+                                <p className="text-xs font-black font-mono text-emerald-600">${t.monto_inicial_pagado_usd.toFixed(2)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] text-slate-400 font-bold uppercase">Financiado</p>
+                                <p className="text-xs font-black font-mono text-blue-600">${(t.monto_usd - t.monto_inicial_pagado_usd).toFixed(2)}</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Paginar */}
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between pt-2">
+                          <button onClick={() => setSalesPage(p => Math.max(1, p - 1))} disabled={salesPage === 1}
+                            className="px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 transition">
+                            ← Ant.
+                          </button>
+                          <span className="text-xs text-slate-500 font-bold">Página {salesPage} de {totalPages}</span>
+                          <button onClick={() => setSalesPage(p => Math.min(totalPages, p + 1))} disabled={salesPage === totalPages}
+                            className="px-3 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 transition">
+                            Sig. →
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Selector de Mes */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-slate-700">Conciliación de Comisiones</p>
+                    <p className="text-[10px] text-slate-400 font-medium">Selecciona el periodo para ver métricas</p>
+                  </div>
+                  {reportMonths.length > 0 && (
+                    <select
+                      value={activeReportMonth}
+                      onChange={e => setSelectedReportMonth(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs font-bold text-[#002855] focus:outline-none focus:ring-2 focus:ring-[#002855]"
+                    >
+                      {reportMonths.map(m => {
+                        const [y, monthNum] = m.split('-');
+                        const date = new Date(parseInt(y), parseInt(monthNum) - 1, 1);
+                        const label = date.toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
+                        return <option key={m} value={m}>{label.charAt(0).toUpperCase() + label.slice(1)}</option>;
+                      })}
+                    </select>
+                  )}
+                </div>
+
+                {reportMonths.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-400 space-y-2">
+                    <Percent size={36} className="mx-auto opacity-30" />
+                    <p className="text-sm font-bold">No hay transacciones registradas para reportes</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Tarjetas de Métricas de Ventas Totales del Mes */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Ventas Totales del Mes</span>
+                        <h5 className="text-xl font-black text-slate-800 font-mono mt-1">${monthlyStats.bruto.toFixed(2)} USD</h5>
+                        <p className="text-[10px] text-slate-500 font-bold font-mono mt-0.5">≈ Bs. {(monthlyStats.bruto * bcvRate).toFixed(2)}</p>
+                      </div>
+                      <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 shadow-sm">
+                        <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Ventas Cobradas</span>
+                        <h5 className="text-xl font-black text-emerald-800 font-mono mt-1">${monthlyStats.pagado.toFixed(2)} USD</h5>
+                        <p className="text-[10px] text-emerald-600 font-bold font-mono mt-0.5">≈ Bs. {(monthlyStats.pagado * bcvRate).toFixed(2)}</p>
+                      </div>
+                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow-sm">
+                        <span className="text-[10px] text-amber-700 font-bold uppercase tracking-wider">Comisión Colegio</span>
+                        <h5 className="text-xl font-black text-amber-800 font-mono mt-1">${monthlyStats.comision.toFixed(2)} USD</h5>
+                        <p className="text-[10px] text-amber-700 font-bold font-mono mt-0.5">≈ Bs. {(monthlyStats.comision * bcvRate).toFixed(2)}</p>
+                      </div>
+                    </div>
+
+                    {/* Detalle de Compras del Periodo */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-sm">
+                      <h5 className="text-xs font-black text-slate-700 uppercase tracking-wider">Detalles de Compra del Periodo</h5>
+                      <div className="space-y-2">
+                        {monthlyTransactions.map(t => {
+                          const txInstallments = installments.filter(inst => inst.transaccion_id === t.id);
+                          const isPaid = txInstallments.length > 0 && txInstallments.every(inst => inst.estatus === 'Cobrado' || inst.estatus === 'Pagado Directo');
+                          return (
+                            <div key={t.id} className="flex justify-between items-center p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs">
+                              <div>
+                                <p className="font-bold text-slate-800">{t.trabajadores_crc?.nombre || 'Trabajador'}</p>
+                                <p className="text-[10px] text-slate-400">{new Date(t.fecha_transaccion).toLocaleDateString('es-VE')}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-mono font-black text-[#002855]">${t.monto_usd.toFixed(2)} USD</p>
+                                <p className="text-[10px] text-amber-700 font-bold font-mono">Comisión: ${t.comision_monto_usd.toFixed(2)}</p>
+                                <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
+                                  isPaid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                                }`}>
+                                  {isPaid ? 'Cobrado' : 'Pendiente'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ════ TAB: PRODUCTOS (VITRINA ONLINE) ════ */}
         {activeTab === 'productos' && (
           <div className="p-4 space-y-4">
             <FeatureGuard moduloId="tienda_online" flags={flags} showBlockScreen>
@@ -203,7 +467,7 @@ export const ProviderMobileView = memo(function ProviderMobileView({
                   </div>
                   {productosActivos < 10 && (
                     <button onClick={() => setShowAddProduct(true)}
-                      className="bg-[#002855] hover:bg-[#073B73] text-white text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 transition">
+                      className="bg-[#002855] hover:bg-[#073B73] text-white text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 transition shadow">
                       + Añadir
                     </button>
                   )}
@@ -263,60 +527,121 @@ export const ProviderMobileView = memo(function ProviderMobileView({
           </div>
         )}
 
-        {/* ════ TAB: PERFIL ════ */}
+        {/* ════ TAB: MI COMERCIO & PERFIL ════ */}
         {activeTab === 'perfil' && (
           <div className="p-4 space-y-4">
-            <div className="bg-gradient-to-br from-[#002855] to-[#073B73] rounded-2xl p-5 text-white">
+            {/* Tarjeta de Cuenta Enlace */}
+            <div className="bg-gradient-to-br from-[#002855] to-[#073B73] rounded-2xl p-5 text-white shadow-md">
               <p className="text-[10px] text-blue-300 font-bold uppercase tracking-widest mb-1">Cuenta Enlace (CoDigo)</p>
               <p className="text-lg font-black font-mono">{provider.cuenta_enlace}</p>
               <p className="text-[10px] text-blue-300 mt-2">Comisión acordada: {(provider.comision_colegio * 100).toFixed(0)}%</p>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-50">
-              <div className="px-4 py-4">
-                <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Dirección</p>
-                <p className="text-sm font-semibold text-slate-800">{provider.direccion || '—'}</p>
+            {/* Formulario de Información y Pago Móvil del Comercio */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4 shadow-sm">
+              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <Building2 size={16} className="text-[#002855]" /> Información de Mi Comercio
+              </h4>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Dirección del Comercio</label>
+                <input
+                  value={editDireccion}
+                  onChange={e => setEditDireccion(e.target.value)}
+                  placeholder="Ej: Carrera 9 esquina calle 15, Duaca"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855]"
+                />
               </div>
-              <div className="px-4 py-4">
-                <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Teléfono</p>
-                <p className="text-sm font-semibold text-slate-800">{provider.telefono || '—'}</p>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Teléfono de Contacto</label>
+                <input
+                  value={editTelefono}
+                  onChange={e => setEditTelefono(e.target.value)}
+                  placeholder="Ej: 0414-5000000"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855]"
+                />
               </div>
+
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-bold text-[#002855] uppercase tracking-wide mb-3">Datos para Pago Móvil de Comercio</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Banco Receptivo</label>
+                    <input
+                      value={editPmBanco}
+                      onChange={e => setEditPmBanco(e.target.value)}
+                      placeholder="Ej: Banesco, Provincial, Mercantil"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Cédula / RIF Titular</label>
+                    <input
+                      value={editPmCedula}
+                      onChange={e => setEditPmCedula(e.target.value)}
+                      placeholder="Ej: J-12345678-0"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Teléfono de Pago Móvil</label>
+                    <input
+                      value={editPmTelefono}
+                      onChange={e => setEditPmTelefono(e.target.value)}
+                      placeholder="Ej: 0412-0000000"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {onSaveProfile && (
+                <button
+                  onClick={handleSaveProfileSubmit}
+                  disabled={isSavingProfile}
+                  className="w-full bg-[#002855] hover:bg-[#073B73] disabled:opacity-50 text-white font-black py-3 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow"
+                >
+                  {isSavingProfile ? <><RefreshCw size={14} className="animate-spin" /> Guardando...</> : <><Save size={14} /> Guardar Cambios de Mi Comercio</>}
+                </button>
+              )}
             </div>
 
             <button onClick={onLogout}
-              className="w-full flex items-center gap-3 px-4 py-3.5 bg-white border border-red-100 rounded-2xl text-red-500 font-bold text-sm hover:bg-red-50 transition">
+              className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-white border border-red-200 rounded-2xl text-red-500 font-black text-xs hover:bg-red-50 transition shadow-sm">
               <LogOut size={16} /> Cerrar Sesión
             </button>
           </div>
         )}
       </main>
 
-      {/* ─── BOTTOM NAVIGATION BAR ─── */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-4xl z-40 bg-white border-t border-slate-200 shadow-xl"
-        style={{ paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + 4px)` }}>
+      {/* ─── BARRA DE NAVEGACIÓN INFERIOR FIJA (NATIVA CON SAFE-AREA-INSET-BOTTOM Y Z-INDEX SEGURO) ─── */}
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-4xl z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)' }}>
         <div className="flex">
           {([
-            { id: 'pos', icon: <QrCode size={20} />, label: 'POS' },
-            { id: 'pedidos', icon: <Package2 size={20} />, label: 'Pedidos', badge: pendingOrders },
-            { id: 'productos', icon: <Store size={20} />, label: 'Mi Tienda' },
-            { id: 'perfil', icon: <User size={20} />, label: 'Perfil' },
+            { id: 'pos', icon: <QrCode size={19} />, label: 'POS' },
+            { id: 'pedidos', icon: <Package2 size={19} />, label: 'Pedidos', badge: pendingOrders },
+            { id: 'ventas', icon: <History size={19} />, label: 'Ventas' },
+            { id: 'productos', icon: <Store size={19} />, label: 'Mi Tienda' },
+            { id: 'perfil', icon: <Building2 size={19} />, label: 'Comercio' },
           ] as Array<{ id: ProviderTab; icon: React.ReactNode; label: string; badge?: number }>).map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-colors relative ${
+              className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-1 transition-colors relative ${
                 activeTab === tab.id ? 'text-[#002855]' : 'text-slate-400 hover:text-slate-600'
               }`}
             >
               {tab.badge && tab.badge > 0 && (
-                <span className="absolute top-2 right-2 bg-red-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                <span className="absolute top-1.5 right-2 bg-red-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow">
                   {tab.badge}
                 </span>
               )}
               {tab.icon}
-              <span className="text-[9px] font-bold uppercase tracking-wide">{tab.label}</span>
+              <span className="text-[9px] font-extrabold uppercase tracking-tight">{tab.label}</span>
               {activeTab === tab.id && (
-                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-[#002855] rounded-full" />
+                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-7 h-0.5 bg-[#002855] rounded-full" />
               )}
             </button>
           ))}

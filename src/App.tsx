@@ -3333,9 +3333,15 @@ export default function App() {
                               comision_por_cobrar: undefined,
                               direccion: currentProvider.direccion,
                               telefono: currentProvider.telefono,
+                              pago_movil_banco: currentProvider.pago_movil_banco,
+                              pago_movil_cedula: currentProvider.pago_movil_cedula,
+                              pago_movil_telefono: currentProvider.pago_movil_telefono,
                             }}
                             productos={productos}
                             orders={orders}
+                            transactions={transactions}
+                            installments={installments}
+                            bcvRate={bcvRate}
                             flags={featureFlags}
                             posSlot={posSlotNode}
                             onOpenScanner={() => setShowQRScannerModal(true)}
@@ -3344,6 +3350,15 @@ export default function App() {
                             onToggleStock={handleToggleStock}
                             onDeleteProduct={handleDeleteProducto}
                             onOrderStatusChange={fetchData}
+                            onSaveProfile={async (data) => {
+                              setEditProviderDireccion(data.direccion);
+                              setEditProviderTelefono(data.telefono);
+                              setEditProviderPagoMovilBanco(data.pago_movil_banco);
+                              setEditProviderPagoMovilCedula(data.pago_movil_cedula);
+                              setEditProviderPagoMovilTelefono(data.pago_movil_telefono);
+                              if (data.logoFile) setLogoFile(data.logoFile);
+                              await handleSaveProviderProfile();
+                            }}
                             onNotification={addNotification}
                             onLogout={handleLogout}
                           />

@@ -22,6 +22,37 @@ export interface FeatureFlag {
   updated_at: string;
 }
 
+export interface Transaction {
+  id: string;
+  trabajador_id: string;
+  proveedor_id: string;
+  monto_usd: number;
+  tasa_bcv: number;
+  monto_ves: number;
+  monto_inicial_pagado_usd: number;
+  dias_financiamiento: number;
+  comision_monto_usd: number;
+  token_aprobacion: string;
+  estatus: 'Pendiente' | 'Aprobada' | 'Rechazada' | 'Completada';
+  fecha_transaccion: string;
+  estado_liquidacion_proveedor?: 'pendiente' | 'liquidado';
+  estado_comision_colegio?: 'pendiente' | 'cobrado';
+  trabajadores_crc?: { nombre: string; cedula?: string };
+  proveedores_aliados?: { nombre: string; categoria?: string };
+}
+
+export interface Installment {
+  id: string;
+  transaccion_id: string;
+  monto_usd: number;
+  fecha_cobro: string;
+  estatus: 'Pendiente' | 'Cobrado' | 'Vencido' | 'En Verificación' | 'Pagado Directo';
+  fecha_pago_real: string | null;
+  tasa_bcv_pago: number | null;
+  monto_ves_pagado: number | null;
+  created_at: string;
+}
+
 export interface ProductoProveedor {
   id: string;
   proveedor_id: string;
