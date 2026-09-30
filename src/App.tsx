@@ -9,13 +9,14 @@ import {
   X, Home, Star, Lock, Upload, Eye, Zap,
   Award, ArrowUp, ArrowDown, Clock, AlertTriangle, Camera, CameraOff,
   Building2, Banknote, Phone, MapPin, BadgeCheck, ImagePlus, ToggleLeft,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, FileSpreadsheet
 } from 'lucide-react';
 import { CATEGORIAS_PROVEEDOR, type CategoriaProveedor, type FeatureFlag, type ProductoProveedor, type Order } from './types';
 import { FeatureFlagPanel } from './components/FeatureFlagPanel';
 import { WorkerMobileView } from './components/WorkerMobileView';
 import { ProviderMobileView } from './components/ProviderMobileView';
 import { ProviderPOSPanel } from './components/ProviderPOSPanel';
+import { exportSupplierReportExcel, exportPayrollReportExcel } from './utils/excelExporter';
 
 // ─── HOOK: DISIPADOR DE PETICIONES DUPLICADAS (Alta Concurrencia) ─────────────
 // Evita que botones críticos se disparen más de una vez en 800ms
@@ -1213,6 +1214,7 @@ export default function App() {
   const [refComision, setRefComision] = useState('');
   const [isProcessingLiquidacion, setIsProcessingLiquidacion] = useState(false);
   const [isProcessingComision, setIsProcessingComision] = useState(false);
+  const [selectedExportProviderId, setSelectedExportProviderId] = useState<string>('');
 
   // --- Landing config ---
   const [editorTab, setEditorTab] = useState<'hero' | 'politicas' | 'banco'>('hero');
@@ -2556,6 +2558,39 @@ export default function App() {
       await fetchData();
     } catch (err: any) { addNotification('error', 'Error de Nómina', err.message); }
     finally { setIsProcessingPayroll(false); }
+  };
+
+  // ─── ADMIN: EXPORTAR REPORTE NÓMINA EN EXCEL (.XLSX) ───────────────────────
+  const handleExportPayrollExcel = async () => {
+    const activeM = payrollFilterMonth || _curMonth;
+    const targets = installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === activeM);
+    if (targets.length === 0) {
+      addNotification('warning', 'Sin Datos', `No hay cuotas registradas para exportar en el mes ${activeM}.`);
+      return;
+    }
+    try {
+      await exportPayrollReportExcel(activeM, installments, transactions, workers, bcvRate);
+      addNotification('success', 'Excel Generado', `Reporte de nómina corporativo (${activeM}) descargado exitosamente.`);
+    } catch (err: any) {
+      addNotification('error', 'Error al Generar Excel', err.message);
+    }
+  };
+
+  // ─── TESORERÍA/ADMIN: EXPORTAR REPORTE PROVEEDOR EN EXCEL (.XLSX) ──────────
+  const handleExportSupplierReport = async (providerId: string) => {
+    const p = providers.find(pr => pr.id === providerId);
+    if (!p) {
+      addNotification('warning', 'Selección Inválida', 'Por favor seleccione un proveedor válido.');
+      return;
+    }
+    const pTx = transactions.filter(t => t.proveedor_id === providerId);
+    const pLiq = liquidaciones.filter(l => l.proveedor_id === providerId);
+    try {
+      await exportSupplierReportExcel(p, pTx, pLiq, bcvRate);
+      addNotification('success', 'Excel Generado', `Reporte corporativo para "${p.nombre}" descargado exitosamente.`);
+    } catch (err: any) {
+      addNotification('error', 'Error al Generar Excel', err.message);
+    }
   };
 
   // ─── ADMIN: EXPORTAR CSV MES ─────────────────────────────────────────────────
@@ -4012,8 +4047,11 @@ export default function App() {
                                         );
                                       })}
                                   </select>
-                                  <button onClick={handleExportPayrollCSV} className="bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold py-2 px-4 rounded-xl border border-slate-200 flex items-center gap-1 transition">
-                                    <Download size={14} className="text-[#64B5F6]"/>CSV
+                                  <button onClick={handleExportPayrollExcel} className="bg-[#002855] hover:bg-[#073B73] text-white text-xs font-bold py-2 px-4 rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95">
+                                    <FileSpreadsheet size={15} className="text-emerald-400"/>📊 Reporte Nómina Excel
+                                  </button>
+                                  <button onClick={handleExportPayrollCSV} className="bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold py-2 px-3 rounded-xl border border-slate-200 flex items-center gap-1 transition">
+                                    <Download size={14} className="text-slate-400"/>CSV
                                   </button>
                                 </div>
                               </div>
@@ -4339,10 +4377,37 @@ export default function App() {
                           <div className="space-y-4">
                             {/* Header */}
                             <div className="flex flex-wrap justify-between items-center gap-3">
-                              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Gestión y Conciliación de Proveedores</h4>
-                              <button onClick={() => { setShowAddProviderModal(true); setEditingProvider(null); }} className="bg-[#002855] text-white text-xs font-bold py-2 px-4 rounded-xl shadow-sm transition hover:bg-[#073B73] flex items-center gap-1.5">
-                                <ShoppingBag size={14}/>Registrar Proveedor
-                              </button>
+                              <div>
+                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Gestión y Conciliación de Proveedores</h4>
+                                <p className="text-xs text-slate-500 font-semibold mt-0.5">Módulo de Tesorería para emisión de reportes corporativos y cortes de pago.</p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-xl p-1">
+                                  <select
+                                    value={selectedExportProviderId}
+                                    onChange={e => setSelectedExportProviderId(e.target.value)}
+                                    className="bg-white border border-slate-200 rounded-lg text-xs font-bold px-2.5 py-1.5 focus:outline-none cursor-pointer text-slate-700"
+                                  >
+                                    <option value="">-- Seleccionar Proveedor --</option>
+                                    {providers.map(pr => (
+                                      <option key={pr.id} value={pr.id}>
+                                        {pr.nombre} ({pr.categoria})
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    disabled={!selectedExportProviderId}
+                                    onClick={() => handleExportSupplierReport(selectedExportProviderId)}
+                                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-xs font-bold py-1.5 px-3 rounded-lg shadow-sm transition flex items-center gap-1.5 disabled:cursor-not-allowed active:scale-95"
+                                  >
+                                    <FileSpreadsheet size={14} />
+                                    Descargar Excel
+                                  </button>
+                                </div>
+                                <button onClick={() => { setShowAddProviderModal(true); setEditingProvider(null); }} className="bg-[#002855] text-white text-xs font-bold py-2 px-4 rounded-xl shadow-sm transition hover:bg-[#073B73] flex items-center gap-1.5">
+                                  <ShoppingBag size={14}/>Registrar Proveedor
+                                </button>
+                              </div>
                             </div>
                             {/* Sub-tabs */}
                             <div className="flex bg-slate-100 p-1 rounded-xl gap-1 w-fit">
@@ -4412,6 +4477,14 @@ export default function App() {
                                         </div>
                                         <div className="flex items-center gap-2">
                                           <span className="text-[10px] text-blue-200 font-mono bg-white/10 px-2.5 py-1 rounded-lg">Total ventas: <span className="text-white font-bold">${p.totalVendido.toFixed(2)}</span></span>
+                                          <button
+                                            title="Descargar Reporte Excel Completo"
+                                            onClick={() => handleExportSupplierReport(p.id)}
+                                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-3 py-1 rounded-lg shadow transition flex items-center gap-1.5 active:scale-95"
+                                          >
+                                            <FileSpreadsheet size={13} />
+                                            Excel
+                                          </button>
                                           <button title="Editar" onClick={() => { setEditingProvider(p); setEditProviderNombre(p.nombre); setEditProviderCategoria(p.categoria); setEditProviderCuenta(p.cuenta_enlace); setEditProviderComision((parseFloat(p.comision_colegio as string)*100).toString()); setShowAddProviderModal(false); }} className="p-1.5 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition"><Sliders size={13}/></button>
                                           <button title="Eliminar" disabled={isDeletingProviderId === p.id} onClick={() => handleDeleteProvider(p.id)} className="p-1.5 text-red-300 hover:text-red-200 rounded-lg hover:bg-white/10 transition disabled:opacity-40">{isDeletingProviderId === p.id ? <RefreshCw size={13} className="animate-spin"/> : <X size={13}/>}</button>
                                         </div>
