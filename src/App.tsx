@@ -2244,19 +2244,30 @@ export default function App() {
           addNotification('error', 'Comisión Inválida', 'La comisión comercial debe estar entre 1% y 10%.');
           return;
         }
-        const { data: pData, error: pError } = await supabase.from('proveedores_aliados').insert([{
+        const provPayloadBase: Record<string, any> = {
           nombre: user.nombre,
           categoria: isLiq ? 'Liquidez / Efectivo' : (user.datos_registro?.categoria || 'Víveres'),
-          cuenta_enlace: user.datos_registro?.cuenta_enlace || '',
+          cuenta_enlace: user.datos_registro?.cuenta_enlace || user.datos_registro?.banco_cuenta || 'Pago Móvil',
           comision_colegio: comision,
+          tipo_proveedor: isLiq ? 'liquidez' : 'comercio',
           razon_social: user.datos_registro?.razon_social || null,
           rif: user.datos_registro?.rif || null,
           direccion: user.datos_registro?.direccion || null,
           pago_movil_banco: user.datos_registro?.pago_movil_banco || null,
           pago_movil_cedula: user.datos_registro?.pago_movil_cedula || null,
           pago_movil_telefono: user.datos_registro?.pago_movil_telefono || null
-        }]).select().single();
-        if (pError) throw pError;
+        };
+        let pData: any = null;
+        const { data: pTry1, error: pErr1 } = await supabase.from('proveedores_aliados').insert([provPayloadBase]).select().single();
+        if (pErr1 && isLiq) {
+          const { data: pTry2, error: pErr2 } = await supabase.from('proveedores_aliados').insert([{ ...provPayloadBase, comision_colegio: 0.01 }]).select().single();
+          if (pErr2) throw pErr2;
+          pData = pTry2;
+        } else if (pErr1) {
+          throw pErr1;
+        } else {
+          pData = pTry1;
+        }
         const { error: uError } = await supabase.from('usuarios_credicrc').update({ proveedor_id: pData.id, aprobado: true }).eq('id', userId);
         if (uError) throw uError;
 
@@ -2653,12 +2664,13 @@ export default function App() {
         categoria: newProviderCategoria,
         cuenta_enlace: bank,
         comision_colegio: isLiq ? 0 : commPct / 100,
+        tipo_proveedor: isLiq ? 'liquidez' : 'comercio',
       };
-      const { error } = await supabase.from('proveedores_aliados').insert([
-        { ...basePayload, tipo_proveedor: isLiq ? 'liquidez' : 'comercio' }
-      ]);
+      const { error } = await supabase.from('proveedores_aliados').insert([basePayload]);
       if (error) {
-        const { error: fallbackErr } = await supabase.from('proveedores_aliados').insert([basePayload]);
+        // Si la restricción CHECK proveedores_aliados_comision_colegio_check exige >= 0.01, insertar con 0.01 manteniendo tipo_proveedor='liquidez' (0% real en reportes y cálculos)
+        const fallbackPayload = isLiq ? { ...basePayload, comision_colegio: 0.01 } : basePayload;
+        const { error: fallbackErr } = await supabase.from('proveedores_aliados').insert([fallbackPayload]);
         if (fallbackErr) throw fallbackErr;
       }
       addNotification('success', 'Proveedor Registrado', isLiq ? `${name} registrado como Proveedor de Liquidez (0% comisión).` : `${name} afiliado con comisión ${commPct}%.`);
@@ -2686,16 +2698,18 @@ export default function App() {
         nombre: name,
         categoria: editProviderCategoria,
         cuenta_enlace: bank,
-        comision_colegio: isLiq ? 0 : commPct / 100
+        comision_colegio: isLiq ? 0 : commPct / 100,
+        tipo_proveedor: isLiq ? 'liquidez' : 'comercio',
       };
       const { error } = await supabase
         .from('proveedores_aliados')
-        .update({ ...baseUpdate, tipo_proveedor: isLiq ? 'liquidez' : 'comercio' })
+        .update(baseUpdate)
         .eq('id', editingProvider.id);
       if (error) {
+        const fallbackUpdate = isLiq ? { ...baseUpdate, comision_colegio: 0.01 } : baseUpdate;
         const { error: fallbackErr } = await supabase
           .from('proveedores_aliados')
-          .update(baseUpdate)
+          .update(fallbackUpdate)
           .eq('id', editingProvider.id);
         if (fallbackErr) throw fallbackErr;
       }
@@ -3165,17 +3179,18 @@ export default function App() {
     return acc;
   }, { bruto: 0, comision: 0, pagado: 0, pendiente: 0, comision_pagada: 0, comision_pendiente: 0 });
   const supplierReconciliation = providers.map(p => {
+    const isLiq = isLiquidityProvider(p);
     const pt = transactions.filter(t => t.proveedor_id === p.id && (t.estatus === 'Aprobada' || t.estatus === 'Completada'));
     const totalVendido = pt.reduce((s, t) => s + t.monto_usd, 0);
-    const totalComision = pt.reduce((s, t) => s + t.comision_monto_usd, 0);
+    const totalComision = isLiq ? 0 : pt.reduce((s, t) => s + t.comision_monto_usd, 0);
     // Bloque A: ventas pendientes de liquidar al proveedor
     const ptPendientesLiq = pt.filter(t => (t.estado_liquidacion_proveedor ?? 'pendiente') === 'pendiente');
     const montoPendienteProveedor = ptPendientesLiq.reduce((s, t) => s + t.monto_usd, 0);
     const txPendientesLiqCount = ptPendientesLiq.length;
     // Bloque B: comisiones pendientes de cobrar al proveedor (independiente del Bloque A)
     const ptPendientesComision = pt.filter(t => (t.estado_comision_colegio ?? 'pendiente') === 'pendiente');
-    const comisionPendienteColegio = ptPendientesComision.reduce((s, t) => s + t.comision_monto_usd, 0);
-    return { ...p, totalVendido, totalComision, netoPagar: totalVendido - totalComision, montoPendienteProveedor, txPendientesLiqCount, comisionPendienteColegio };
+    const comisionPendienteColegio = isLiq ? 0 : ptPendientesComision.reduce((s, t) => s + t.comision_monto_usd, 0);
+    return { ...p, comision_colegio: isLiq ? 0 : p.comision_colegio, totalVendido, totalComision, netoPagar: totalVendido - totalComision, montoPendienteProveedor, txPendientesLiqCount, comisionPendienteColegio };
   });
 
 
