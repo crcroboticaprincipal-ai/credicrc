@@ -5,8 +5,8 @@ import {
   Lock, Eye, Clock, AlertTriangle, ChevronRight, ShieldCheck,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import type { FeatureFlag, ProductoProveedor, Order } from '../types';
-import { ORDER_STATUS_CONFIG } from '../types';
+import type { FeatureFlag, ProductoProveedor, Order, ConfiguracionLiquidez, AvanceEfectivoSolicitud } from '../types';
+import { ORDER_STATUS_CONFIG, isLiquidityProvider } from '../types';
 import { FeatureGuard } from './FeatureGuard';
 import { TiendaOnlineModal } from './TiendaOnlineModal';
 import { LineaDomesticaModal } from './LineaDomesticaModal';
@@ -28,7 +28,7 @@ interface TransactionMini {
   id: string; monto_usd: number; fecha_transaccion: string;
   proveedores_aliados?: { nombre: string };
 }
-interface ProviderMini { id: string; nombre: string; categoria: string; logo_url?: string | null; }
+interface ProviderMini { id: string; nombre: string; categoria: string; logo_url?: string | null; tipo_proveedor?: string | null; }
 interface ActiveQRMini {
   qrId: string; workerName: string; workerCedula: string;
   tokenHash: string; payloadJson: string; nivel: number;
@@ -44,6 +44,8 @@ interface WorkerMobileViewProps {
   productos: ProductoProveedor[];
   orders: Order[];
   flags: FeatureFlag[];
+  configLiquidezMap?: Record<string, ConfiguracionLiquidez>;
+  avanceSolicitudes?: AvanceEfectivoSolicitud[];
   bcvRate: number;
   activeQR: ActiveQRMini | null;
   qrCountdown: number;
@@ -93,6 +95,7 @@ function BottomSheet({ open, onClose, title, children }: {
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 export const WorkerMobileView = memo(function WorkerMobileView({
   worker, installments, transactions, providers, productos, orders, flags,
+  configLiquidezMap, avanceSolicitudes,
   bcvRate, activeQR, qrCountdown, isGeneratingQR, isUploadingPayment,
   onGenerateQR, onSubmitDirectPayment, onLogout, onNotification, onRefresh,
 }: WorkerMobileViewProps) {
@@ -318,8 +321,8 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                   className="bg-white border border-emerald-200 rounded-2xl p-4 text-left hover:border-emerald-400 hover:shadow-md transition-all active:scale-[0.98]">
                   <span className="text-2xl block mb-2">💵</span>
                   <p className="text-xs font-black text-slate-800">Avance de Efectivo</p>
-                  <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
-                    ${(worker.cupo_avance_efectivo - worker.cupo_avance_efectivo_usado).toFixed(0)} disp.
+                  <p className="text-[10px] text-emerald-700 font-bold mt-0.5">
+                    ${worker.limite_disponible.toFixed(2)} disp.
                   </p>
                 </button>
               </FeatureGuard>
@@ -334,7 +337,8 @@ export const WorkerMobileView = memo(function WorkerMobileView({
 
             {/* Filtro chips por categoría */}
             {(() => {
-              const cats = [...new Set(providers.map(p => p.categoria))];
+              const commercialProviders = providers.filter(p => !isLiquidityProvider(p));
+              const cats = [...new Set(commercialProviders.map(p => p.categoria))];
               return (
                 <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
                   {cats.map(cat => (
@@ -348,7 +352,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
 
             {/* Grid de proveedores */}
             <div className="grid grid-cols-1 gap-3">
-              {providers.map(prov => {
+              {providers.filter(p => !isLiquidityProvider(p)).map(prov => {
                 const provProductos = productos.filter(p => p.proveedor_id === prov.id && p.activo);
                 const flagTienda = flags.find(f => f.modulo_id === 'tienda_online');
                 const isTiendaEnabled = !flagTienda || flagTienda.activo;
@@ -491,7 +495,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                     <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-xl flex-shrink-0">💵</div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-black text-slate-800">Avance de Efectivo</p>
-                      <p className="text-[10px] text-slate-500 font-semibold">Con cálculo de interés transparente · ${(worker.cupo_avance_efectivo - worker.cupo_avance_efectivo_usado).toFixed(0)} disp.</p>
+                      <p className="text-[10px] text-slate-500 font-semibold">Con cálculo de interés transparente · ${worker.limite_disponible.toFixed(2)} disp.</p>
                     </div>
                     <ChevronRight size={16} className="text-slate-300 flex-shrink-0" />
                   </button>
@@ -708,12 +712,17 @@ export const WorkerMobileView = memo(function WorkerMobileView({
       {showAvanceEf && (
         <AvanceEfectivoModal
           trabajadorId={worker.id}
-          proveedores={providers}
-          cupoDisponible={worker.cupo_avance_efectivo - worker.cupo_avance_efectivo_usado}
-          cupoTotal={worker.cupo_avance_efectivo}
+          trabajadorNombre={worker.nombre}
+          trabajadorCedula={worker.cedula}
+          saldoDisponible={worker.limite_disponible}
+          limiteTotal={worker.limite_total}
+          providers={providers}
+          configLiquidezMap={configLiquidezMap}
+          misSolicitudes={avanceSolicitudes}
           bcvRate={bcvRate}
+          flags={flags}
           onClose={() => setShowAvanceEf(false)}
-          onSolicitudCreada={onRefresh}
+          onSuccess={onRefresh}
           onNotification={onNotification}
         />
       )}

@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Zap, ShoppingBag, Home as HomeIcon, Banknote, ToggleLeft, ToggleRight, RefreshCw, Settings } from 'lucide-react';
+import { Zap, ShoppingBag, Home as HomeIcon, Banknote, ToggleLeft, ToggleRight, RefreshCw, Settings, PartyPopper } from 'lucide-react';
 import type { FeatureFlag } from '../types';
 
 interface FeatureFlagPanelProps {
@@ -14,6 +14,7 @@ const MODULE_ICONS: Record<string, React.ReactNode> = {
   avance_efectivo:      <Banknote size={18} className="text-emerald-500" />,
   registro_proveedores: <Settings size={18} className="text-slate-500" />,
   pedidos_checkout:     <Zap size={18} className="text-amber-500" />,
+  promo_sin_inicial:    <PartyPopper size={18} className="text-rose-500" />,
 };
 
 const MODULE_LABELS: Record<string, string> = {
@@ -22,6 +23,7 @@ const MODULE_LABELS: Record<string, string> = {
   avance_efectivo:      '💵 Avance de Efectivo',
   registro_proveedores: '➕ Registro de Nuevos Proveedores',
   pedidos_checkout:     '⚡ Pedidos & Checkout Online',
+  promo_sin_inicial:    '🎉 Promoción: Compras SIN Inicial',
 };
 
 export const FeatureFlagPanel = memo(function FeatureFlagPanel({

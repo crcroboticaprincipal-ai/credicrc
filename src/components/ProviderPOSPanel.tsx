@@ -34,6 +34,8 @@ export interface ProviderPOSPanelProps {
   posAmount: string;
   setPosAmount: (val: string) => void;
   aplicaInicial: boolean;
+  /** Promoción vigente: solo Inicial Cero; el botón "Aplica Inicial" se muestra gris y deshabilitado */
+  promoSinInicial?: boolean;
   setAplicaInicial: (val: boolean) => void;
   posDays: number;
   setPosDays: (val: number) => void;
@@ -61,6 +63,7 @@ export function ProviderPOSPanel({
   posAmount,
   setPosAmount,
   aplicaInicial,
+  promoSinInicial = false,
   setAplicaInicial,
   posDays,
   setPosDays,
@@ -188,8 +191,8 @@ export function ProviderPOSPanel({
               </div>
             </div>
 
-            {/* Sugerencia de Inicial */}
-            {scannedWorkerInfo && posAmount && parseFloat(posAmount) > 0 && (() => {
+            {/* Sugerencia de Inicial (se oculta durante la promoción sin inicial) */}
+            {!promoSinInicial && scannedWorkerInfo && posAmount && parseFloat(posAmount) > 0 && (() => {
               const pct = scannedWorkerInfo.nivel === 4 ? 0.20 : scannedWorkerInfo.nivel === 3 ? 0.30 : scannedWorkerInfo.nivel === 2 ? 0.35 : 0.40;
               const sugerido = parseFloat(posAmount) * pct;
               return (
@@ -211,14 +214,28 @@ export function ProviderPOSPanel({
               <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
                 Requerimiento de Inicial
               </label>
+              {promoSinInicial && (
+                <div className="mb-2 text-[11px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl px-3 py-2 flex items-center gap-2">
+                  <span>🎉</span>
+                  <span>Promoción vigente: todas las compras son con Inicial Cero.</span>
+                </div>
+              )}
               <div className="flex gap-2">
                 <button
                   type="button"
+                  disabled={promoSinInicial}
+                  aria-disabled={promoSinInicial}
+                  title={promoSinInicial ? 'Deshabilitado: promoción sin inicial vigente' : undefined}
                   onClick={() => {
+                    if (promoSinInicial) return;
                     setAplicaInicial(true);
                     if (validationResult) setValidationResult(null);
                   }}
-                  className={`flex-1 py-2.5 text-xs font-black rounded-xl border transition ${aplicaInicial ? 'bg-[#002855] text-white border-[#002855]' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+                  className={`flex-1 py-2.5 text-xs font-black rounded-xl border transition ${
+                    promoSinInicial
+                      ? 'bg-slate-200 text-slate-400 border-slate-200 cursor-not-allowed opacity-70'
+                      : aplicaInicial ? 'bg-[#002855] text-white border-[#002855]' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                  }`}
                 >
                   Aplica Inicial
                 </button>

@@ -11,12 +11,24 @@ import {
   Building2, Banknote, Phone, MapPin, BadgeCheck, ImagePlus, ToggleLeft,
   ChevronDown, ChevronUp, FileSpreadsheet
 } from 'lucide-react';
-import { CATEGORIAS_PROVEEDOR, type CategoriaProveedor, type FeatureFlag, type ProductoProveedor, type Order } from './types';
+import {
+  CATEGORIAS_PROVEEDOR,
+  isLiquidityProvider,
+  type CategoriaProveedor,
+  type FeatureFlag,
+  type ProductoProveedor,
+  type Order,
+  type ConfiguracionLiquidez,
+  type AvanceEfectivoSolicitud,
+  type AvanceEfectivoCuota,
+} from './types';
 import { FeatureFlagPanel } from './components/FeatureFlagPanel';
+import { FeatureGuard } from './components/FeatureGuard';
 import { WorkerMobileView } from './components/WorkerMobileView';
 import { ProviderMobileView } from './components/ProviderMobileView';
 import { ProviderPOSPanel } from './components/ProviderPOSPanel';
-import { exportSupplierReportExcel, exportPayrollReportExcel } from './utils/excelExporter';
+import { ConsolaLiquidezView } from './components/ConsolaLiquidezView';
+import { AvanceEfectivoModal } from './components/AvanceEfectivoModal';
 
 // ─── HOOK: DISIPADOR DE PETICIONES DUPLICADAS (Alta Concurrencia) ─────────────
 // Evita que botones críticos se disparen más de una vez en 800ms
@@ -123,6 +135,13 @@ async function hashPassword(plain: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// ─── PROMOCIÓN: COMPRAS SIN INICIAL (bandera en Control de Módulos) ──────────
+// activo = true  → promoción vigente: solo se permite Inicial Cero (botón gris)
+// activo = false → promoción apagada: el proveedor puede elegir "Aplica Inicial"
+// Si la fila aún no existe en BD se asume ACTIVA y se crea al primer cambio.
+const PROMO_SIN_INICIAL_ID = 'promo_sin_inicial';
+const PROMO_SIN_INICIAL_DESC = 'Promoción vigente: todas las compras se procesan con Inicial Cero. El botón "Aplica Inicial" queda deshabilitado (gris) para los proveedores.';
+
 // ─── CONSTANTES ──────────────────────────────────────────────────────────────
 const STANDARD_CARGOS = ['Directivo', 'Docente', 'Administrativo', 'Servicios Generales'] as const;
 type CargoCRC = typeof STANDARD_CARGOS[number];
@@ -151,6 +170,7 @@ interface Worker extends DBWorker {
 interface Provider {
   id: string; nombre: string; categoria: CategoriaProveedor;
   cuenta_enlace: string; comision_colegio: string | number; created_at: string;
+  tipo_proveedor?: 'comercio' | 'liquidez';
   // Campos extendidos del perfil del comercio
   razon_social?: string; rif?: string; direccion?: string; telefono?: string;
   pago_movil_banco?: string; pago_movil_cedula?: string; pago_movil_telefono?: string;
@@ -174,6 +194,16 @@ interface Installment {
   fecha_pago_real: string | null; tasa_bcv_pago: number | null; monto_ves_pagado: number | null;
   created_at: string;
   transacciones_credicrc?: Transaction & { trabajadores_crc?: Worker; proveedores_aliados?: Provider };
+  // Campos para unificación de cuotas de Avance de Efectivo en Nómina Consolidada
+  trabajador_id?: string;
+  es_avance_efectivo?: boolean;
+  avance_cuota_id?: string;
+  avance_solicitud_id?: string;
+  numero_cuota?: number;
+  total_cuotas?: number;
+  num_cuotas_total?: number;
+  capital_usd?: number;
+  interes_usd?: number;
 }
 interface DirectPayment {
   id: string; cuota_id: string; trabajador_id: string; monto_usd: number;
@@ -201,10 +231,12 @@ interface ActiveQR {
 }
 interface UserAccount {
   id: string; email: string; password?: string; nombre: string;
-  rol: 'trabajador' | 'proveedor' | 'admin' | 'tesoreria';
+  rol: 'trabajador' | 'proveedor' | 'proveedor_liquidez' | 'admin' | 'tesoreria';
   trabajador_id: string | null; proveedor_id: string | null; aprobado: boolean;
   datos_registro?: {
     cedula?: string; cargo?: string; categoria?: CategoriaProveedor; cuenta_enlace?: string;
+    tipo_proveedor?: 'comercio' | 'liquidez';
+    configuracion_liquidez?: ConfiguracionLiquidez;
     razon_social?: string; rif?: string; direccion?: string;
     banco_cuenta?: string; pago_movil_banco?: string; pago_movil_cedula?: string; pago_movil_telefono?: string;
   } | null;
@@ -901,9 +933,9 @@ const AuthCard = memo(function AuthCard({
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-slate-500 uppercase block">Categoría</label>
-                        <select value={authProviderCategoria} onChange={e => setAuthProviderCategoria(e.target.value as 'Carnes' | 'Víveres')}
+                        <select value={authProviderCategoria} onChange={e => setAuthProviderCategoria(e.target.value as CategoriaProveedor)}
                           className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:border-[#002855] transition font-bold">
-                          <option>Carnes</option><option>Víveres</option>
+                          {CATEGORIAS_PROVEEDOR.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                         </select>
                       </div>
                       <div className="space-y-1">
@@ -1240,8 +1272,25 @@ export default function App() {
 
   // ─── ESTADOS V2 ─────────────────────────────────────────────────────────────
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
+  // Promoción sin inicial: por defecto ACTIVA (fail-safe) hasta que el admin la apague
+  const promoSinInicial = featureFlags.find(f => f.modulo_id === PROMO_SIN_INICIAL_ID)?.activo ?? true;
+  const prevPromoRef = useRef(promoSinInicial);
+  useEffect(() => {
+    if (promoSinInicial) {
+      if (aplicaInicial) setAplicaInicial(false);
+      if (inicialConfirmada) setInicialConfirmada(false);
+    } else if (prevPromoRef.current) {
+      setAplicaInicial(true); // al apagar la promo se restaura el valor por defecto
+    }
+    prevPromoRef.current = promoSinInicial;
+  }, [promoSinInicial, aplicaInicial, inicialConfirmada]);
   const [productos, setProductos] = useState<ProductoProveedor[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  // ─── ESTADOS MÓDULO AVANCE DE EFECTIVO Y PROVEEDOR DE LIQUIDEZ ──────────────
+  const [avanceSolicitudes, setAvanceSolicitudes] = useState<AvanceEfectivoSolicitud[]>([]);
+  const [avanceCuotas, setAvanceCuotas] = useState<AvanceEfectivoCuota[]>([]);
+  const [configLiquidezMap, setConfigLiquidezMap] = useState<Record<string, ConfiguracionLiquidez>>({});
+  const [showDesktopAvanceModal, setShowDesktopAvanceModal] = useState<boolean>(false);
 
   // ─── NOTIFICACIONES ─────────────────────────────────────────────────────────
   const addNotification = useCallback((type: SystemNotification['type'], title: string, message: string) => {
@@ -1263,18 +1312,21 @@ export default function App() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [wRes, pRes, tRes, cRes, uRes, cfgRes, dpRes, liqRes, ffRes, prodRes, ordRes] = await Promise.all([
+      const [wRes, pRes, tRes, cRes, uRes, cfgRes, dpRes, liqRes, ffRes, prodRes, ordRes, aeSolRes, aeCuoRes, cfgLiqRes] = await Promise.all([
         supabase.from('trabajadores_crc').select('*').order('nombre'),
         supabase.from('proveedores_aliados').select('*').order('nombre'),
         supabase.from('transacciones_credicrc').select('*, trabajadores_crc(*), proveedores_aliados(*)').order('fecha_transaccion', { ascending: false }),
         supabase.from('cronograma_cuotas').select('*, transacciones_credicrc(*, trabajadores_crc(*), proveedores_aliados(*))').order('fecha_cobro'),
-        supabase.from('usuarios_credicrc').select('*').order('created_at', { ascending: false }),
+        supabase.from('usuarios_credicrc').select('id, email, nombre, rol, aprobado, trabajador_id, proveedor_id, datos_registro, created_at').order('created_at', { ascending: false }),
         supabase.from('configuracion_inicio').select('*').eq('id', 1).maybeSingle(),
         supabase.from('pagos_directos_credicrc').select('*, cronograma_cuotas(*), trabajadores_crc(*)').order('created_at', { ascending: false }),
         supabase.from('historial_liquidaciones').select('*, proveedores_aliados(nombre)').order('fecha_corte', { ascending: false }),
         supabase.from('feature_flags').select('*').order('modulo_id'),
         supabase.from('productos_proveedor').select('*').order('created_at', { ascending: false }),
         supabase.from('orders').select('*, order_items(*), trabajador:trabajadores_crc(nombre, cedula)').order('created_at', { ascending: false }),
+        supabase.from('avance_efectivo_solicitudes').select('*').order('created_at', { ascending: false }),
+        supabase.from('avance_efectivo_cuotas').select('*').order('fecha_cobro', { ascending: true }),
+        supabase.from('configuracion_liquidez').select('*'),
       ]);
 
       const pw = (wRes.data || []).map((w: DBWorker): Worker => ({
@@ -1289,8 +1341,9 @@ export default function App() {
       setWorkers(pw);
       if (pw.length > 0 && !activeWorkerId) setActiveWorkerId(pw[0].id);
 
-      setProviders(pRes.data || []);
-      if (pRes.data && pRes.data.length > 0 && !activeProviderId) setActiveProviderId(pRes.data[0].id);
+      const provList: Provider[] = pRes.data || [];
+      setProviders(provList);
+      if (provList.length > 0 && !activeProviderId) setActiveProviderId(provList[0].id);
 
       const pt = (tRes.data || []).map((t: any): Transaction => ({
         ...t,
@@ -1301,18 +1354,149 @@ export default function App() {
       }));
       setTransactions(pt);
 
-      const pi = (cRes.data || []).map((c: any): Installment => ({
+      // Procesar Solicitudes y Cuotas de Avance de Efectivo
+      const workerByIdMap = new Map<string, Worker>();
+      pw.forEach(w => workerByIdMap.set(w.id, w));
+      const provByIdMap = new Map<string, Provider>();
+      provList.forEach(p => provByIdMap.set(p.id, p));
+
+      const parsedAeSolicitudes: AvanceEfectivoSolicitud[] = (aeSolRes.data || []).map((s: any) => ({
+        ...s,
+        monto_capital_usd: parseFloat(s.monto_capital_usd || '0'),
+        valor_interes: parseFloat(s.valor_interes || '0'),
+        monto_interes_total_usd: parseFloat(s.monto_interes_total_usd || '0'),
+        monto_total_usd: parseFloat(s.monto_total_usd || '0'),
+        valor_cuota_usd: parseFloat(s.valor_cuota_usd || '0'),
+        tasa_bcv_registro: parseFloat(s.tasa_bcv_registro || String(bcvRate)),
+        trabajadores_crc: workerByIdMap.get(s.trabajador_id),
+        proveedores_aliados: provByIdMap.get(s.proveedor_liquidez_id),
+      }));
+      setAvanceSolicitudes(parsedAeSolicitudes);
+
+      const solByIdMap = new Map<string, AvanceEfectivoSolicitud>();
+      parsedAeSolicitudes.forEach(s => solByIdMap.set(s.id, s));
+
+      const parsedAeCuotas: AvanceEfectivoCuota[] = (aeCuoRes.data || []).map((c: any) => ({
+        ...c,
+        monto_usd: parseFloat(c.monto_usd || '0'),
+        capital_usd: parseFloat(c.capital_usd || '0'),
+        interes_usd: parseFloat(c.interes_usd || '0'),
+        tasa_bcv_pago: c.tasa_bcv_pago ? parseFloat(c.tasa_bcv_pago) : null,
+        monto_ves_pagado: c.monto_ves_pagado ? parseFloat(c.monto_ves_pagado) : null,
+        avance_efectivo_solicitudes: solByIdMap.get(c.solicitud_id),
+      }));
+      setAvanceCuotas(parsedAeCuotas);
+
+      // Unificar cuotas comerciales + cuotas de avances desembolsados en la Nómina Consolidada
+      const regularInsts: Installment[] = (cRes.data || []).map((c: any): Installment => ({
         ...c, monto_usd: parseFloat(c.monto_usd),
         tasa_bcv_pago: c.tasa_bcv_pago ? parseFloat(c.tasa_bcv_pago) : null,
         monto_ves_pagado: c.monto_ves_pagado ? parseFloat(c.monto_ves_pagado) : null,
       }));
+
+      const avanceUnifiedInsts: Installment[] = parsedAeCuotas
+        .filter(c => {
+          const parent = solByIdMap.get(c.solicitud_id);
+          return parent && (parent.estatus === 'En Pago' || parent.estatus === 'Desembolsado' || parent.estatus === 'Aprobado' || parent.estatus === 'Completado');
+        })
+        .map(c => {
+          const parent = solByIdMap.get(c.solicitud_id)!;
+          const wObj = workerByIdMap.get(parent.trabajador_id);
+          const pObj = provByIdMap.get(parent.proveedor_liquidez_id) || ({
+            id: parent.proveedor_liquidez_id,
+            nombre: 'Proveedor de Liquidez',
+            categoria: 'Liquidez / Efectivo' as CategoriaProveedor,
+            cuenta_enlace: '',
+            comision_colegio: 0,
+            created_at: parent.created_at,
+            tipo_proveedor: 'liquidez',
+          });
+          return {
+            id: `ae-${c.id}`,
+            transaccion_id: parent.id,
+            monto_usd: c.monto_usd,
+            fecha_cobro: c.fecha_cobro,
+            estatus: c.estatus,
+            fecha_pago_real: c.fecha_pago_real || null,
+            tasa_bcv_pago: c.tasa_bcv_pago || null,
+            monto_ves_pagado: c.monto_ves_pagado || null,
+            created_at: c.created_at || parent.created_at,
+            es_avance_efectivo: true,
+            avance_cuota_id: c.id,
+            avance_solicitud_id: parent.id,
+            numero_cuota: c.numero_cuota,
+            total_cuotas: parent.num_cuotas,
+            capital_usd: c.capital_usd,
+            interes_usd: c.interes_usd,
+            transacciones_credicrc: {
+              id: parent.id,
+              trabajador_id: parent.trabajador_id,
+              proveedor_id: parent.proveedor_liquidez_id,
+              monto_usd: parent.monto_total_usd,
+              tasa_bcv: parent.tasa_bcv_registro,
+              monto_ves: Math.round(parent.monto_total_usd * parent.tasa_bcv_registro * 100) / 100,
+              monto_inicial_pagado_usd: 0,
+              dias_financiamiento: parent.num_cuotas * 15,
+              comision_monto_usd: 0, // 0% comisión plataforma en módulo de liquidez
+              token_aprobacion: `AVANCE-${parent.id.slice(0, 8)}`,
+              estatus: parent.estatus === 'Completado' ? 'Completada' : 'Aprobada',
+              fecha_transaccion: parent.created_at,
+              trabajadores_crc: wObj,
+              proveedores_aliados: pObj,
+            },
+          };
+        });
+
+      const pi = [...regularInsts, ...avanceUnifiedInsts].sort((a, b) =>
+        (a.fecha_cobro || '').localeCompare(b.fecha_cobro || '')
+      );
       setInstallments(pi);
+
+      // Cargar Configurador Dinámico de Liquidez (BD + datos_registro + localStorage)
+      const cfgMap: Record<string, ConfiguracionLiquidez> = {};
+      try {
+        const localRaw = localStorage.getItem('credicrc_config_liquidez_map');
+        if (localRaw) {
+          Object.assign(cfgMap, JSON.parse(localRaw));
+        }
+      } catch { /* ignorar */ }
+
+      (uRes.data || []).forEach((u: any) => {
+        if (u.datos_registro?.configuracion_liquidez && u.proveedor_id) {
+          cfgMap[u.proveedor_id] = u.datos_registro.configuracion_liquidez;
+        }
+      });
+
+      if (cfgLiqRes && Array.isArray(cfgLiqRes.data)) {
+        cfgLiqRes.data.forEach((row: any) => {
+          cfgMap[row.proveedor_id] = {
+            proveedor_id: row.proveedor_id,
+            recepcion_activa: Boolean(row.recepcion_activa),
+            modalidad_recargo: row.modalidad_recargo || 'porcentaje',
+            tasa_1_cuota: parseFloat(row.tasa_1_cuota ?? '10'),
+            cargo_minimo_1_cuota_usd: parseFloat(row.cargo_minimo_1_cuota_usd ?? '1.50'),
+            tasa_2_cuotas: parseFloat(row.tasa_2_cuotas ?? '16'),
+            tasa_3_cuotas: parseFloat(row.tasa_3_cuotas ?? '24'),
+            monto_minimo_usd: parseFloat(row.monto_minimo_usd ?? '10'),
+            monto_maximo_usd: parseFloat(row.monto_maximo_usd ?? '40'),
+            updated_at: row.updated_at,
+          };
+        });
+      }
+      setConfigLiquidezMap(cfgMap);
 
       setSystemUsers(uRes.data || []);
       if (cfgRes.data) setLandingConfig(cfgRes.data);
       setDirectPayments((dpRes.data || []) as DirectPayment[]);
       setLiquidaciones((liqRes.data || []) as LiquidacionRecord[]);
-      if (ffRes.data) setFeatureFlags(ffRes.data as FeatureFlag[]);
+      if (ffRes.data) {
+        const ff = [...(ffRes.data as FeatureFlag[])];
+        // Bandera virtual de la promoción (activa) si todavía no existe en BD
+        if (!ff.some(f => f.modulo_id === PROMO_SIN_INICIAL_ID)) {
+          ff.push({ modulo_id: PROMO_SIN_INICIAL_ID, activo: true, descripcion: PROMO_SIN_INICIAL_DESC, mensaje_bloqueo: null, updated_at: new Date().toISOString() });
+        }
+        setFeatureFlags(ff);
+      }
       
       // Combinar productos de productos_proveedor y los guardados en datos_registro de usuarios
       const tableProds: ProductoProveedor[] = (prodRes.data || []).map((p: any) => ({ ...p, precio: parseFloat(p.precio) }));
@@ -1383,7 +1567,8 @@ export default function App() {
   // ─── PERSISTENCIA DE SESIÓN A LOCALSTORAGE ───
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem('credicrc_current_user', JSON.stringify(currentUser));
+      const { password, reset_token, ...safeUser } = currentUser as any;
+      localStorage.setItem('credicrc_current_user', JSON.stringify(safeUser));
     } else {
       localStorage.removeItem('credicrc_current_user');
     }
@@ -1442,8 +1627,13 @@ export default function App() {
   const handleToggleFeatureFlag = useCallback(async (moduloId: string, activo: boolean) => {
     setFeatureFlags(prev => prev.map(f => f.modulo_id === moduloId ? { ...f, activo } : f));
     try {
-      const { error } = await supabase.from('feature_flags').update({ activo, updated_at: new Date().toISOString() }).eq('modulo_id', moduloId);
+      const { data: updated, error } = await supabase.from('feature_flags').update({ activo, updated_at: new Date().toISOString() }).eq('modulo_id', moduloId).select();
       if (error) throw error;
+      // La bandera de la promoción puede no existir aún en BD: se crea en el primer cambio
+      if ((!updated || updated.length === 0) && moduloId === PROMO_SIN_INICIAL_ID) {
+        const { error: insErr } = await supabase.from('feature_flags').insert([{ modulo_id: PROMO_SIN_INICIAL_ID, activo, descripcion: PROMO_SIN_INICIAL_DESC, mensaje_bloqueo: null }]);
+        if (insErr) throw insErr;
+      }
       addNotification('success', 'Módulo Actualizado', `Módulo '${moduloId}' ${activo ? 'activado' : 'desactivado'}.`);
     } catch (err: any) {
       addNotification('error', 'Error actualizando módulo', err.message);
@@ -1605,14 +1795,35 @@ export default function App() {
     return () => { if (qrTimerRef.current) clearTimeout(qrTimerRef.current); };
   }, [qrCountdown, activeQR, addNotification]);
 
-  // ─── REALTIME SYNC (auto-actualización trabajador al procesar compra) ──────────
+  // ─── REALTIME SYNC (auto-actualización trabajador y liquidez en tiempo real) ─
   useEffect(() => {
-    if (!activeWorkerId) return;
-
-    // Suscribirse a inserciones de transacciones para este trabajador en tiempo real
     const channel = supabase
-      .channel(`worker-txs-${activeWorkerId}`)
+      .channel(`credicrc-live-${activeWorkerId || 'global'}`)
       .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'avance_efectivo_solicitudes',
+        },
+        () => {
+          void fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'avance_efectivo_cuotas',
+        },
+        () => {
+          void fetchData();
+        }
+      );
+
+    if (activeWorkerId) {
+      channel.on(
         'postgres_changes',
         {
           event: 'INSERT',
@@ -1621,21 +1832,64 @@ export default function App() {
           filter: `trabajador_id=eq.${activeWorkerId}`
         },
         (payload: any) => {
-          // Recargar datos del trabajador silenciosamente en segundo plano
           void fetchData();
-          // Cerrar modal de QR e invalidar token local
           setShowQRModal(false);
           setActiveQR(null);
-          // Feedback de éxito en tiempo real
           addNotification('success', '¡Compra Autorizada!', `Tu transacción por $${parseFloat(payload.new.monto_usd || '0').toFixed(2)} ha sido procesada con éxito.`);
         }
-      )
-      .subscribe();
+      );
+    }
+
+    channel.subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
   }, [activeWorkerId, addNotification, fetchData]);
+
+  // ─── GUARDAR CONFIGURACIÓN DINÁMICA DEL PROVEEDOR DE LIQUIDEZ ───────────────
+  const handleSaveConfigLiquidez = useCallback(async (newCfg: ConfiguracionLiquidez) => {
+    // 1. Guardar inmediatamente en estado y localStorage para respuesta instantánea
+    setConfigLiquidezMap(prev => {
+      const updated = { ...prev, [newCfg.proveedor_id]: newCfg };
+      try {
+        localStorage.setItem('credicrc_config_liquidez_map', JSON.stringify(updated));
+      } catch { /* ignorar */ }
+      return updated;
+    });
+
+    // 2. Intentar persistir en la tabla configuracion_liquidez de Supabase
+    try {
+      await supabase.from('configuracion_liquidez').upsert({
+        proveedor_id: newCfg.proveedor_id,
+        recepcion_activa: newCfg.recepcion_activa,
+        modalidad_recargo: newCfg.modalidad_recargo,
+        tasa_1_cuota: newCfg.tasa_1_cuota,
+        cargo_minimo_1_cuota_usd: newCfg.cargo_minimo_1_cuota_usd,
+        tasa_2_cuotas: newCfg.tasa_2_cuotas,
+        tasa_3_cuotas: newCfg.tasa_3_cuotas,
+        monto_minimo_usd: newCfg.monto_minimo_usd,
+        monto_maximo_usd: newCfg.monto_maximo_usd,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'proveedor_id' });
+    } catch { /* si aún no se ha corrido la migración SQL, continúa con el respaldo en usuarios_credicrc */ }
+
+    // 3. Respaldo en datos_registro del usuario proveedor en usuarios_credicrc
+    try {
+      const targetUser = systemUsers.find(u => u.proveedor_id === newCfg.proveedor_id) ||
+        (currentUser?.proveedor_id === newCfg.proveedor_id ? currentUser : undefined);
+      if (targetUser) {
+        const updatedReg = {
+          ...(targetUser.datos_registro || {}),
+          configuracion_liquidez: newCfg,
+        };
+        await supabase
+          .from('usuarios_credicrc')
+          .update({ datos_registro: updatedReg })
+          .eq('id', targetUser.id);
+      }
+    } catch { /* ignorar */ }
+  }, [systemUsers, currentUser]);
 
   // ─── AUTH ────────────────────────────────────────────────────────────────────
 
@@ -1670,10 +1924,14 @@ export default function App() {
       const user = data as UserAccount;
       if (!user.aprobado) { addNotification('warning', 'Cuenta Pendiente', 'Tu cuenta está en espera de aprobación.'); return; }
       setCurrentUser(user);
-      // Módulo 5: Tesorería accede como 'admin' con vista restringida
-      setActiveRole(user.rol === 'tesoreria' ? 'admin' : user.rol as any);
+      // Módulo 5 & Liquidez: Tesorería accede como 'admin'; proveedor_liquidez accede al módulo 'proveedor' aislado
+      const mappedRole =
+        user.rol === 'tesoreria' ? 'admin' :
+        user.rol === 'proveedor_liquidez' ? 'proveedor' :
+        user.rol as any;
+      setActiveRole(mappedRole);
       if (user.rol === 'trabajador' && user.trabajador_id) setActiveWorkerId(user.trabajador_id);
-      else if (user.rol === 'proveedor' && user.proveedor_id) setActiveProviderId(user.proveedor_id);
+      else if ((user.rol === 'proveedor' || user.rol === 'proveedor_liquidez') && user.proveedor_id) setActiveProviderId(user.proveedor_id);
       else if (user.rol === 'tesoreria') setAdminTab('payroll'); // Iniciar en tab de nómina
       addNotification('success', 'Sesión Iniciada', `¡Bienvenido, ${user.nombre}!`);
       setAuthEmail(''); setAuthPassword('');
@@ -1946,20 +2204,49 @@ export default function App() {
       if (user.rol === 'trabajador') {
         const salary = parseFloat(approveSalary); const years = parseInt(approveAntiguedad);
         if (isNaN(salary) || salary <= 0) { addNotification('error', 'Dato Inválido', 'Ingrese un salario válido.'); return; }
-        const { data: wData, error: wError } = await supabase.from('trabajadores_crc').insert([{ nombre: user.nombre, cedula: user.datos_registro?.cedula || 'V-00.000.000', cargo: user.datos_registro?.cargo || 'Docente', salario_base: salary, antiguedad_anios: isNaN(years) ? 0 : years }]).select().single();
-        if (wError) throw wError;
+        const targetCedula = user.datos_registro?.cedula || 'V-00.000.000';
+        let wData: any = null;
+
+        const { data: existingW } = await supabase.from('trabajadores_crc').select('*').eq('cedula', targetCedula).maybeSingle();
+        if (existingW) {
+          const { data: updatedW, error: upErr } = await supabase.from('trabajadores_crc').update({
+            nombre: user.nombre,
+            salario_base: salary,
+            antiguedad_anios: isNaN(years) ? 0 : years,
+            cargo: user.datos_registro?.cargo || existingW.cargo || 'Docente'
+          }).eq('id', existingW.id).select().single();
+          if (upErr) throw upErr;
+          wData = updatedW;
+        } else {
+          const { data: newW, error: wError } = await supabase.from('trabajadores_crc').insert([{
+            nombre: user.nombre,
+            cedula: targetCedula,
+            cargo: user.datos_registro?.cargo || 'Docente',
+            salario_base: salary,
+            antiguedad_anios: isNaN(years) ? 0 : years
+          }]).select().single();
+          if (wError) throw wError;
+          wData = newW;
+        }
+
         const { error: uError } = await supabase.from('usuarios_credicrc').update({ trabajador_id: wData.id, aprobado: true }).eq('id', userId);
         if (uError) throw uError;
 
 
 
         addNotification('success', 'Trabajador Aprobado', `${user.nombre} activado en nómina.`);
-      } else if (user.rol === 'proveedor') {
-        const comision = parseFloat(approveComision) / 100;
-        if (isNaN(comision) || comision < 0.01 || comision > 0.10) { addNotification('error', 'Comisión Inválida', 'La comisión debe estar entre 1% y 10%.'); return; }
+      } else if (user.rol === 'proveedor' || user.rol === 'proveedor_liquidez') {
+        const isLiq = user.rol === 'proveedor_liquidez' ||
+          user.datos_registro?.categoria === 'Liquidez / Efectivo' ||
+          user.datos_registro?.tipo_proveedor === 'liquidez';
+        const comision = isLiq ? 0 : parseFloat(approveComision) / 100;
+        if (!isLiq && (isNaN(comision) || comision < 0.01 || comision > 0.10)) {
+          addNotification('error', 'Comisión Inválida', 'La comisión comercial debe estar entre 1% y 10%.');
+          return;
+        }
         const { data: pData, error: pError } = await supabase.from('proveedores_aliados').insert([{
           nombre: user.nombre,
-          categoria: user.datos_registro?.categoria || 'Víveres',
+          categoria: isLiq ? 'Liquidez / Efectivo' : (user.datos_registro?.categoria || 'Víveres'),
           cuenta_enlace: user.datos_registro?.cuenta_enlace || '',
           comision_colegio: comision,
           razon_social: user.datos_registro?.razon_social || null,
@@ -1973,9 +2260,7 @@ export default function App() {
         const { error: uError } = await supabase.from('usuarios_credicrc').update({ proveedor_id: pData.id, aprobado: true }).eq('id', userId);
         if (uError) throw uError;
 
-
-
-        addNotification('success', 'Proveedor Aprobado', `${user.nombre} afiliado al sistema.`);
+        addNotification('success', isLiq ? 'Proveedor de Liquidez Aprobado' : 'Proveedor Aprobado', `${user.nombre} afiliado al sistema.`);
       }
       setApprovingUserId(null); await fetchData();
     } catch (err: any) { addNotification('error', 'Error al Aprobar', err.message); }
@@ -2120,12 +2405,24 @@ export default function App() {
     }
     setIsValidating(true);
     try {
+      // Promoción sin inicial: se lee la bandera fresca de BD para que el cambio del admin
+      // aplique de inmediato aunque el proveedor no haya recargado la app.
+      let promoActiva = promoSinInicial;
+      try {
+        const { data: pf } = await supabase.from('feature_flags').select('activo').eq('modulo_id', PROMO_SIN_INICIAL_ID).maybeSingle();
+        if (pf) {
+          promoActiva = !!pf.activo;
+          setFeatureFlags(prev => prev.map(f => f.modulo_id === PROMO_SIN_INICIAL_ID ? { ...f, activo: promoActiva } : f));
+        }
+      } catch { /* sin red: se usa el estado local */ }
+      const aplicaInicialEfectivo = promoActiva ? false : aplicaInicial;
+
       const { data, error } = await supabase.rpc('validar_y_consumir_qr', {
         p_token_hash: scannedToken,
         p_proveedor_id: activeProviderId,
         p_monto_usd: amount,
         p_dias_financiamiento: posDays,
-        p_aplica_inicial: aplicaInicial,
+        p_aplica_inicial: aplicaInicialEfectivo,
       });
       if (error) throw error;
       const res = data[0];
@@ -2143,7 +2440,7 @@ export default function App() {
         workerId: scannedWorkerInfo ? workers.find(w => w.cedula === scannedWorkerInfo.cedula)?.id : undefined,
       });
       if (res.aprobado) {
-        if (aplicaInicial) {
+        if (aplicaInicialEfectivo) {
           addNotification('success', 'Montos Calculados', `Inicial: $${parseFloat(res.monto_inicial_calculado || '0').toFixed(2)} · Cuota: $${parseFloat(res.cuota_financiada || '0').toFixed(2)}`);
         } else {
           addNotification('success', 'Montos Calculados', `Inicial Cero · Cuota a Financiar: $${parseFloat(res.cuota_financiada || '0').toFixed(2)}`);
@@ -2342,13 +2639,29 @@ export default function App() {
   // ─── ADMIN: REGISTRAR PROVEEDOR ──────────────────────────────────────────────
   const handleRegisterProvider = async () => {
     const name = newProviderNombre.trim(); const bank = newProviderCuenta.trim();
-    const commPct = parseFloat(newProviderComision);
-    if (!name || !bank || isNaN(commPct) || commPct < 1 || commPct > 10) { addNotification('error', 'Datos Inválidos', 'Complete todos los campos (comisión entre 1% y 10%).'); return; }
+    const isLiq = newProviderCategoria === 'Liquidez / Efectivo';
+    const commPct = isLiq && (newProviderComision === '' || isNaN(parseFloat(newProviderComision))) ? 0 : parseFloat(newProviderComision);
+    const minComm = isLiq ? 0 : 1;
+    if (!name || !bank || isNaN(commPct) || commPct < minComm || commPct > 10) {
+      addNotification('error', 'Datos Inválidos', isLiq ? 'Complete todos los campos (comisión entre 0% y 10%).' : 'Complete todos los campos (comisión entre 1% y 10%).');
+      return;
+    }
     setIsRegisteringProvider(true);
     try {
-      const { error } = await supabase.from('proveedores_aliados').insert([{ nombre: name, categoria: newProviderCategoria, cuenta_enlace: bank, comision_colegio: commPct / 100 }]);
-      if (error) throw error;
-      addNotification('success', 'Proveedor Registrado', `${name} afiliado con comisión ${commPct}%.`);
+      const basePayload: Record<string, any> = {
+        nombre: name,
+        categoria: newProviderCategoria,
+        cuenta_enlace: bank,
+        comision_colegio: isLiq ? 0 : commPct / 100,
+      };
+      const { error } = await supabase.from('proveedores_aliados').insert([
+        { ...basePayload, tipo_proveedor: isLiq ? 'liquidez' : 'comercio' }
+      ]);
+      if (error) {
+        const { error: fallbackErr } = await supabase.from('proveedores_aliados').insert([basePayload]);
+        if (fallbackErr) throw fallbackErr;
+      }
+      addNotification('success', 'Proveedor Registrado', isLiq ? `${name} registrado como Proveedor de Liquidez (0% comisión).` : `${name} afiliado con comisión ${commPct}%.`);
       setNewProviderNombre(''); setNewProviderCuenta(''); setNewProviderCategoria('Carnes'); setNewProviderComision('4.0');
       setShowAddProviderModal(false); await fetchData();
     } catch (err: any) { addNotification('error', 'Error al Registrar', err.message); }
@@ -2360,23 +2673,32 @@ export default function App() {
     if (!editingProvider) return;
     const name = editProviderNombre.trim();
     const bank = editProviderCuenta.trim();
-    const commPct = parseFloat(editProviderComision);
-    if (!name || !bank || isNaN(commPct) || commPct < 1 || commPct > 10) {
-      addNotification('error', 'Datos Inválidos', 'Complete todos los campos (comisión entre 1% y 10%).');
+    const isLiq = editProviderCategoria === 'Liquidez / Efectivo';
+    const commPct = isLiq && (editProviderComision === '' || isNaN(parseFloat(editProviderComision))) ? 0 : parseFloat(editProviderComision);
+    const minComm = isLiq ? 0 : 1;
+    if (!name || !bank || isNaN(commPct) || commPct < minComm || commPct > 10) {
+      addNotification('error', 'Datos Inválidos', isLiq ? 'Complete todos los campos (comisión entre 0% y 10%).' : 'Complete todos los campos (comisión entre 1% y 10%).');
       return;
     }
     setIsSavingProvider(true);
     try {
+      const baseUpdate: Record<string, any> = {
+        nombre: name,
+        categoria: editProviderCategoria,
+        cuenta_enlace: bank,
+        comision_colegio: isLiq ? 0 : commPct / 100
+      };
       const { error } = await supabase
         .from('proveedores_aliados')
-        .update({
-          nombre: name,
-          categoria: editProviderCategoria,
-          cuenta_enlace: bank,
-          comision_colegio: commPct / 100
-        })
+        .update({ ...baseUpdate, tipo_proveedor: isLiq ? 'liquidez' : 'comercio' })
         .eq('id', editingProvider.id);
-      if (error) throw error;
+      if (error) {
+        const { error: fallbackErr } = await supabase
+          .from('proveedores_aliados')
+          .update(baseUpdate)
+          .eq('id', editingProvider.id);
+        if (fallbackErr) throw fallbackErr;
+      }
       addNotification('success', 'Proveedor Actualizado', `${name} modificado correctamente.`);
       setEditingProvider(null);
       await fetchData();
@@ -2539,22 +2861,165 @@ export default function App() {
     finally { setIsApplyingBulk(false); }
   };
 
-  // ─── ADMIN: PROCESAR NÓMINA MES ───────────────────────────────────────────────
+  // ─── ADMIN: COBRAR CUOTA DE AVANCE DE EFECTIVO (LIBERACIÓN EXACTA DE CAPITAL) ─
+  const collectSingleAvanceInstallment = async (inst: Installment): Promise<{ capitalLiberado: number; interesCobrado: number }> => {
+    const cuotaId = inst.avance_cuota_id || inst.id;
+    // 1. Intentar RPC atómica PostgreSQL con bloqueo FOR UPDATE
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc('cobrar_cuota_avance_nomina', {
+      p_cuota_id: cuotaId,
+      p_tasa_bcv: bcvRate,
+    });
+
+    if (!rpcErr && rpcRes) {
+      if (!rpcRes.ok) {
+        throw new Error(rpcRes.mensaje || 'Error al cobrar cuota de avance.');
+      }
+      const wId = inst.trabajador_id || inst.transacciones_credicrc?.trabajador_id;
+      if (wId) {
+        void supabase.rpc('evaluar_nivel_trabajador', { p_trabajador_id: wId, p_tipo: 'PUNTUAL' }).then(() => {});
+      }
+      return {
+        capitalLiberado: Number(rpcRes.capital_liberado || inst.capital_usd || 0),
+        interesCobrado: Number(rpcRes.interes_ganancia || inst.interes_usd || 0),
+      };
+    }
+
+    // 2. Fallback transaccional seguro si la migración RPC aún no ha sido corrida
+    const { data: cuotaActual, error: qErr } = await supabase
+      .from('avance_efectivo_cuotas')
+      .select('*')
+      .eq('id', cuotaId)
+      .single();
+    if (qErr || !cuotaActual) throw new Error('No se encontró la cuota de avance.');
+    if (cuotaActual.estatus !== 'Pendiente') {
+      throw new Error('Esta cuota ya fue cobrada previamente (protección contra doble acreditación).');
+    }
+
+    const capitalLiberado = Math.round(Number(cuotaActual.capital_usd || inst.capital_usd || 0) * 100) / 100;
+    const interesCobrado = Math.round(Number(cuotaActual.interes_usd || inst.interes_usd || 0) * 100) / 100;
+    const wId = cuotaActual.trabajador_id || inst.trabajador_id || inst.transacciones_credicrc?.trabajador_id;
+
+    // Marcar cuota como Cobrado
+    const { error: upCuotaErr } = await supabase
+      .from('avance_efectivo_cuotas')
+      .update({
+        estatus: 'Cobrado',
+        fecha_pago_real: new Date().toISOString(),
+      })
+      .eq('id', cuotaId)
+      .eq('estatus', 'Pendiente');
+    if (upCuotaErr) throw upCuotaErr;
+
+    // Liberar EXCLUSIVAMENTE la porción de CAPITAL en el saldo_disponible del trabajador (jamás el interés)
+    if (wId) {
+      const { data: workerRow, error: wErr } = await supabase
+        .from('trabajadores_crc')
+        .select('id, limite_total, limite_disponible, cupo_avance_efectivo_usado')
+        .eq('id', wId)
+        .single();
+      if (!wErr && workerRow) {
+        const topeTotal = Number(workerRow.limite_total || 40);
+        const dispActual = Number(workerRow.limite_disponible || 0);
+        const nuevoDisponible = Math.min(topeTotal, Math.round((dispActual + capitalLiberado) * 100) / 100);
+        const nuevoUsado = Math.max(0, Math.round((Number(workerRow.cupo_avance_efectivo_usado || 0) - capitalLiberado) * 100) / 100);
+        await supabase
+          .from('trabajadores_crc')
+          .update({
+            limite_disponible: nuevoDisponible,
+            cupo_avance_efectivo_usado: nuevoUsado,
+          })
+          .eq('id', wId);
+      }
+      void supabase.rpc('evaluar_nivel_trabajador', { p_trabajador_id: wId, p_tipo: 'PUNTUAL' }).then(() => {});
+    }
+
+    // Si todas las cuotas de la solicitud están cobradas, marcar solicitud como Completado
+    if (cuotaActual.solicitud_id) {
+      const { data: remCuotas } = await supabase
+        .from('avance_efectivo_cuotas')
+        .select('id, estatus')
+        .eq('solicitud_id', cuotaActual.solicitud_id);
+      if (remCuotas && remCuotas.every((c: any) => c.estatus === 'Cobrado' || c.estatus === 'Pagado Directo')) {
+        await supabase
+          .from('avance_efectivo_solicitudes')
+          .update({ estatus: 'Completado', updated_at: new Date().toISOString() })
+          .eq('id', cuotaActual.solicitud_id);
+      }
+    }
+
+    return { capitalLiberado, interesCobrado };
+  };
+
+  // ─── ADMIN: CONFIRMAR COBRO DE UNA CUOTA INDIVIDUAL ──────────────────────────
+  const handleCollectSingleInstallment = async (inst: Installment) => {
+    if (inst.estatus !== 'Pendiente') return;
+    setIsProcessingPayroll(true);
+    try {
+      if (inst.es_avance_efectivo) {
+        const { capitalLiberado, interesCobrado } = await collectSingleAvanceInstallment(inst);
+        addNotification(
+          'success',
+          '💵 Cuota de Avance Cobrada',
+          `Cuota de $${inst.monto_usd.toFixed(2)} descontada. Cupo liberado: +$${capitalLiberado.toFixed(2)} (solo capital). Ganancia neta proveedor: $${interesCobrado.toFixed(2)}.`
+        );
+      } else {
+        const { error } = await supabase
+          .from('cronograma_cuotas')
+          .update({
+            estatus: 'Cobrado',
+            fecha_pago_real: new Date().toISOString(),
+            tasa_bcv_pago: bcvRate,
+            monto_ves_pagado: Math.round(inst.monto_usd * bcvRate * 100) / 100,
+          })
+          .eq('id', inst.id);
+        if (error) throw error;
+        if (inst.transacciones_credicrc?.trabajador_id) {
+          void supabase.rpc('evaluar_nivel_trabajador', { p_trabajador_id: inst.transacciones_credicrc.trabajador_id, p_tipo: 'PUNTUAL' }).then(() => {});
+        }
+        addNotification('success', 'Cuota Cobrada', `Cuota comercial de $${inst.monto_usd.toFixed(2)} descontada en nómina.`);
+      }
+      await fetchData();
+    } catch (err: any) {
+      addNotification('error', 'Error al Cobrar Cuota', err.message);
+    } finally {
+      setIsProcessingPayroll(false);
+    }
+  };
+
+  // ─── ADMIN: PROCESAR NÓMINA MES (COMERCIOS + AVANCES DE EFECTIVO) ────────────
   const handleProcessPayrollDeductions = async () => {
     const targets = installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === payrollFilterMonth && i.estatus === 'Pendiente');
     if (targets.length === 0) { addNotification('warning', 'Sin Cuotas', 'No hay cuotas pendientes para este mes.'); return; }
     setIsProcessingPayroll(true);
     try {
-      const ids = targets.map(i => i.id);
-      const { error } = await supabase.from('cronograma_cuotas').update({ estatus: 'Cobrado', fecha_pago_real: new Date().toISOString(), tasa_bcv_pago: bcvRate }).in('id', ids);
-      if (error) throw error;
-      for (const inst of targets) {
-        await supabase.from('cronograma_cuotas').update({ monto_ves_pagado: Math.round(inst.monto_usd * bcvRate * 100) / 100 }).eq('id', inst.id);
-        if (inst.transacciones_credicrc?.trabajador_id) {
-          void supabase.rpc('evaluar_nivel_trabajador', { p_trabajador_id: inst.transacciones_credicrc.trabajador_id, p_tipo: 'PUNTUAL' }).then(() => {});
+      const regularTargets = targets.filter(i => !i.es_avance_efectivo);
+      const avanceTargets = targets.filter(i => i.es_avance_efectivo);
+
+      if (regularTargets.length > 0) {
+        const ids = regularTargets.map(i => i.id);
+        const { error } = await supabase.from('cronograma_cuotas').update({ estatus: 'Cobrado', fecha_pago_real: new Date().toISOString(), tasa_bcv_pago: bcvRate }).in('id', ids);
+        if (error) throw error;
+        for (const inst of regularTargets) {
+          await supabase.from('cronograma_cuotas').update({ monto_ves_pagado: Math.round(inst.monto_usd * bcvRate * 100) / 100 }).eq('id', inst.id);
+          if (inst.transacciones_credicrc?.trabajador_id) {
+            void supabase.rpc('evaluar_nivel_trabajador', { p_trabajador_id: inst.transacciones_credicrc.trabajador_id, p_tipo: 'PUNTUAL' }).then(() => {});
+          }
         }
       }
-      addNotification('success', 'Nómina Procesada', `${targets.length} cuotas descontadas exitosamente para el mes.`);
+
+      let totalCapitalLiberado = 0;
+      let totalInteresProveedor = 0;
+      for (const avInst of avanceTargets) {
+        const { capitalLiberado, interesCobrado } = await collectSingleAvanceInstallment(avInst);
+        totalCapitalLiberado += capitalLiberado;
+        totalInteresProveedor += interesCobrado;
+      }
+
+      const detailMsg = avanceTargets.length > 0
+        ? `${targets.length} cuotas descontadas (${regularTargets.length} comercio + ${avanceTargets.length} avance). Capital liberado a trabajadores: +$${totalCapitalLiberado.toFixed(2)}.`
+        : `${targets.length} cuotas descontadas exitosamente para el mes.`;
+
+      addNotification('success', 'Nómina Procesada', detailMsg);
       await fetchData();
     } catch (err: any) { addNotification('error', 'Error de Nómina', err.message); }
     finally { setIsProcessingPayroll(false); }
@@ -2569,6 +3034,7 @@ export default function App() {
       return;
     }
     try {
+      const { exportPayrollReportExcel } = await import('./utils/excelExporter');
       await exportPayrollReportExcel(activeM, installments, transactions, workers, bcvRate);
       addNotification('success', 'Excel Generado', `Reporte de nómina corporativo (${activeM}) descargado exitosamente.`);
     } catch (err: any) {
@@ -2583,9 +3049,17 @@ export default function App() {
       addNotification('warning', 'Selección Inválida', 'Por favor seleccione un proveedor válido.');
       return;
     }
-    const pTx = transactions.filter(t => t.proveedor_id === providerId);
-    const pLiq = liquidaciones.filter(l => l.proveedor_id === providerId);
     try {
+      if (isLiquidityProvider(p)) {
+        const { exportLiquidityReportExcel } = await import('./utils/excelExporter');
+        const pSolicitudes = avanceSolicitudes.filter(s => !s.proveedor_liquidez_id || s.proveedor_liquidez_id === p.id);
+        await exportLiquidityReportExcel(p.nombre, pSolicitudes, avanceCuotas, workers, bcvRate);
+        addNotification('success', 'Excel de Liquidez Generado', `Reporte financiero de liquidez (0% comisión) para "${p.nombre}" descargado.`);
+        return;
+      }
+      const pTx = transactions.filter(t => t.proveedor_id === providerId);
+      const pLiq = liquidaciones.filter(l => l.proveedor_id === providerId);
+      const { exportSupplierReportExcel } = await import('./utils/excelExporter');
       await exportSupplierReportExcel(p, pTx, pLiq, bcvRate);
       addNotification('success', 'Excel Generado', `Reporte corporativo para "${p.nombre}" descargado exitosamente.`);
     } catch (err: any) {
@@ -2628,11 +3102,36 @@ export default function App() {
   const currentWorkerTransactions = transactions.filter(t => t.trabajador_id === activeWId);
   const currentWorkerInstallments = installments.filter(i => i.transacciones_credicrc?.trabajador_id === activeWId || (i as any).trabajador_id === activeWId);
 
-  const currentProvider = providers.find(p =>
-    p.id === activeProviderId ||
-    (currentUser?.rol === 'proveedor' && (currentUser as any).proveedor_id && p.id === (currentUser as any).proveedor_id) ||
-    (currentUser?.rol === 'proveedor' && currentUser.nombre && p.nombre === currentUser.nombre)
-  ) || (providers.length > 0 ? (providers.find(p => p.id === activeProviderId) || providers[0]) : undefined);
+  const VIRTUAL_LIQUIDITY_PROVIDER: Provider = {
+    id: '__consola_liquidez__',
+    nombre: currentUser?.rol === 'proveedor_liquidez' ? currentUser.nombre : 'Consola Proveedor de Liquidez',
+    categoria: 'Liquidez / Efectivo',
+    tipo_proveedor: 'liquidez',
+    cuenta_enlace: currentUser?.datos_registro?.banco_cuenta || 'Pago Móvil / Transferencia',
+    comision_colegio: 0,
+    created_at: new Date().toISOString(),
+  };
+
+  const currentProvider: Provider | undefined = (() => {
+    if (activeProviderId === '__consola_liquidez__') {
+      return providers.find(p => isLiquidityProvider(p)) || VIRTUAL_LIQUIDITY_PROVIDER;
+    }
+    if (currentUser?.rol === 'proveedor_liquidez') {
+      return (
+        providers.find(p => (currentUser as any).proveedor_id && p.id === (currentUser as any).proveedor_id) ||
+        providers.find(p => p.nombre === currentUser.nombre) ||
+        providers.find(p => isLiquidityProvider(p)) ||
+        VIRTUAL_LIQUIDITY_PROVIDER
+      );
+    }
+    return (
+      providers.find(p =>
+        p.id === activeProviderId ||
+        (currentUser?.rol === 'proveedor' && (currentUser as any).proveedor_id && p.id === (currentUser as any).proveedor_id) ||
+        (currentUser?.rol === 'proveedor' && currentUser.nombre && p.nombre === currentUser.nombre)
+      ) || (providers.length > 0 ? (providers.find(p => p.id === activeProviderId) || providers[0]) : undefined)
+    );
+  })();
 
   const activePId = currentProvider?.id || activeProviderId;
   const currentProviderTransactions = transactions.filter(t => t.proveedor_id === activePId);
@@ -2819,7 +3318,7 @@ export default function App() {
             {([
               { role: 'inicio', icon: <Home size={14}/>, label: 'Inicio' },
               { role: 'trabajador', icon: <User size={14}/>, label: 'Trabajador', restricted: ['trabajador', 'admin'] },
-              { role: 'proveedor', icon: <ShoppingBag size={14}/>, label: 'Proveedor', restricted: ['proveedor', 'admin'] },
+              { role: 'proveedor', icon: <ShoppingBag size={14}/>, label: currentUser?.rol === 'proveedor_liquidez' ? 'Consola Liquidez' : 'Proveedor', restricted: ['proveedor', 'proveedor_liquidez', 'admin'] },
               { role: 'admin', icon: <Sliders size={14}/>, label: 'Admin', restricted: ['admin'] },
             ] as any[]).map(item => {
               const isVisible = !item.restricted || !currentUser || item.restricted.includes(currentUser.rol);
@@ -2988,6 +3487,8 @@ export default function App() {
                             onLogout={handleLogout}
                             onNotification={addNotification}
                             onRefresh={fetchData}
+                            configLiquidezMap={configLiquidezMap}
+                            avanceSolicitudes={avanceSolicitudes.filter(s => s.trabajador_id === currentWorker.id)}
                           />
                         </div>
 
@@ -3071,6 +3572,14 @@ export default function App() {
                                   <Eye size={14}/> Ver QR Activo ({Math.floor(qrCountdown / 60)}:{(qrCountdown % 60).toString().padStart(2, '0')})
                                 </button>
                               )}
+                              <FeatureGuard moduloId="avance_efectivo" flags={featureFlags}>
+                                <button
+                                  onClick={() => setShowDesktopAvanceModal(true)}
+                                  className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-black py-3 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-1.5"
+                                >
+                                  <Banknote size={15}/> 💵 Solicitar Avance de Efectivo (${currentWorker.limite_disponible.toFixed(2)} disp.)
+                                </button>
+                              </FeatureGuard>
                             </div>
                           </div>
                         </div>
@@ -3078,6 +3587,25 @@ export default function App() {
                         {/* QR Modal */}
                         {showQRModal && activeQR && (
                           <QRDisplay qr={activeQR} countdown={qrCountdown} onClose={() => setShowQRModal(false)}/>
+                        )}
+
+                        {/* Modal Avance de Efectivo (Desktop) */}
+                        {showDesktopAvanceModal && (
+                          <AvanceEfectivoModal
+                            trabajadorId={currentWorker.id}
+                            trabajadorNombre={currentWorker.nombre}
+                            trabajadorCedula={currentWorker.cedula}
+                            saldoDisponible={currentWorker.limite_disponible}
+                            limiteTotal={currentWorker.limite_total}
+                            bcvRate={bcvRate}
+                            providers={providers as any}
+                            flags={featureFlags}
+                            configLiquidezMap={configLiquidezMap}
+                            misSolicitudes={avanceSolicitudes.filter(s => s.trabajador_id === currentWorker.id)}
+                            onClose={() => setShowDesktopAvanceModal(false)}
+                            onSuccess={fetchData}
+                            onNotification={addNotification}
+                          />
                         )}
 
                         {/* Cuotas y Pagos Directos */}
@@ -3104,6 +3632,11 @@ export default function App() {
                                         <span className="text-slate-400">→</span>
                                         <span className="text-[#E53935] font-bold font-mono">Bs. {(inst.monto_usd * bcvRate).toFixed(2)}</span>
                                       </div>
+                                      {inst.es_avance_efectivo && (
+                                        <div className="text-[10px] font-extrabold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md inline-block">
+                                          💵 Avance de Efectivo · Cuota #{inst.numero_cuota}/{inst.num_cuotas_total}
+                                        </div>
+                                      )}
                                       <div className="text-[10px] text-slate-500 font-medium">
                                         Vence: {new Date(inst.fecha_cobro).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' })}
                                       </div>
@@ -3298,23 +3831,75 @@ export default function App() {
                 ) : <AuthCard role="trabajador" {...authCardProps}/>
               )}
 
-              {/* ════════════ MÓDULO PROVEEDOR ════════════ */}
+              {/* ════════════ MÓDULO PROVEEDOR / CONSOLA DE LIQUIDEZ ════════════ */}
               {activeRole === 'proveedor' && (
-                currentUser && (currentUser.rol === 'proveedor' || currentUser.rol === 'admin') ? (
+                currentUser && (currentUser.rol === 'proveedor' || currentUser.rol === 'proveedor_liquidez' || currentUser.rol === 'admin') ? (
                   <div className="space-y-6 animate-fade-in">
                     {currentUser.rol === 'admin' && (
                       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div>
-                          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Modo Admin: Simular POS Proveedor</h2>
-                          <p className="text-sm text-slate-600 font-medium">Simula el punto de venta de:</p>
+                          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Modo Admin: Simular Proveedor / Consola de Liquidez</h2>
+                          <p className="text-sm text-slate-600 font-medium">Selecciona un comercio aliado o la Consola Financiera de Liquidez:</p>
                         </div>
-                        <select value={activeProviderId} onChange={e => { setActiveProviderId(e.target.value); setScannedToken(null); setValidationResult(null); setScannedWorkerInfo(null); }}
-                          className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-[#64B5F6] cursor-pointer">
-                          {providers.map(p => <option key={p.id} value={p.id}>{p.nombre} ({p.categoria})</option>)}
-                        </select>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const liqProv = providers.find(p => isLiquidityProvider(p));
+                              setActiveProviderId(liqProv ? liqProv.id : '__consola_liquidez__');
+                            }}
+                            className={`px-3.5 py-2.5 rounded-xl text-xs font-black transition flex items-center gap-1.5 border ${
+                              isLiquidityProvider(currentProvider)
+                                ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                                : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                            }`}
+                          >
+                            <Banknote size={14}/> 💵 Consola Liquidez
+                          </button>
+                          <select value={activeProviderId} onChange={e => { setActiveProviderId(e.target.value); setScannedToken(null); setValidationResult(null); setScannedWorkerInfo(null); }}
+                            className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-[#64B5F6] cursor-pointer">
+                            {!providers.some(p => isLiquidityProvider(p)) && (
+                              <option value="__consola_liquidez__">💵 Consola Proveedor de Liquidez (Efectivo)</option>
+                            )}
+                            {providers.map(p => (
+                              <option key={p.id} value={p.id}>
+                                {isLiquidityProvider(p) ? '💵 ' : '🏪 '}{p.nombre} ({p.categoria})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                     )}
 
+                    {/* AISLAMIENTO TOTAL DE INTERFAZ: Si es Proveedor de Liquidez, ocultar POS/QR/Catálogo/Comisiones y renderizar exclusivamente ConsolaLiquidezView */}
+                    {(currentUser.rol === 'proveedor_liquidez' || isLiquidityProvider(currentProvider)) && currentProvider ? (
+                      <ConsolaLiquidezView
+                        provider={{
+                          id: currentProvider.id,
+                          nombre: currentProvider.nombre,
+                          categoria: currentProvider.categoria,
+                          tipo_proveedor: 'liquidez',
+                          cuenta_enlace: currentProvider.cuenta_enlace,
+                          pago_movil_banco: currentProvider.pago_movil_banco,
+                          pago_movil_cedula: currentProvider.pago_movil_cedula,
+                          pago_movil_telefono: currentProvider.pago_movil_telefono,
+                        }}
+                        solicitudes={avanceSolicitudes}
+                        cuotas={avanceCuotas}
+                        workers={workers}
+                        configLiquidez={
+                          configLiquidezMap[currentProvider.id] ||
+                          Object.values(configLiquidezMap)[0] ||
+                          null
+                        }
+                        bcvRate={bcvRate}
+                        onSaveConfig={handleSaveConfigLiquidez}
+                        onRefresh={fetchData}
+                        onNotification={addNotification}
+                        onLogout={handleLogout}
+                      />
+                    ) : (
+                      <>
                     {currentProvider ? (() => {
                       const posSlotNode = (
                         <ProviderPOSPanel
@@ -3327,6 +3912,7 @@ export default function App() {
                           posAmount={posAmount}
                           setPosAmount={setPosAmount}
                           aplicaInicial={aplicaInicial}
+                          promoSinInicial={promoSinInicial}
                           setAplicaInicial={setAplicaInicial}
                           posDays={posDays}
                           setPosDays={setPosDays}
@@ -3716,9 +4302,11 @@ export default function App() {
                             </div>
                           )}
                         </div>
-                      </div>
-                    ) : <AuthCard role="proveedor" {...authCardProps}/>
-                  )}
+                      </>
+                    )}
+                  </div>
+                ) : <AuthCard role="proveedor" {...authCardProps}/>
+              )}
 
               {/* ════════════ PANEL ADMIN / TESORERÍA ════════════ */}
               {activeRole === 'admin' && (
@@ -3796,15 +4384,6 @@ export default function App() {
                         {/* Dashboard tab */}
                         {adminTab === 'dashboard' && (
                           <div className="space-y-4">
-                            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-5 rounded-xl border border-blue-100">
-                              <h4 className="text-xs font-black text-[#002855] uppercase tracking-wider mb-3">Credenciales de Prueba</h4>
-                              <div className="flex flex-wrap gap-4 text-[10px] text-slate-700 font-bold font-mono">
-                                <div><span className="text-[#002855] block uppercase text-[8px] font-sans">Admin</span>admin@credicrc.com / DirectivaCRC2026</div>
-                                <div className="border-l border-slate-200 pl-4"><span className="text-emerald-600 block uppercase text-[8px] font-sans">Trabajador (Docente)</span>maria@credicrc.com / 12345</div>
-                                <div className="border-l border-slate-200 pl-4"><span className="text-[#64B5F6] block uppercase text-[8px] font-sans">Proveedor</span>viveres@credicrc.com / 12345</div>
-                                <div className="border-l border-slate-200 pl-4"><span className="text-purple-600 block uppercase text-[8px] font-sans">Tesorería</span>tesoreria@credicrc.com / password</div>
-                              </div>
-                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                                 <h5 className="text-xs font-bold text-slate-600 mb-3">Tasa BCV Activa</h5>
@@ -3854,6 +4433,10 @@ export default function App() {
                                             <div><label className="text-[9px] font-bold text-slate-500 block">Antigüedad</label>
                                               <input type="number" value={approveAntiguedad} onChange={e => setApproveAntiguedad(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-1.5 text-xs font-bold"/></div>
                                           </div>
+                                        ) : (user.rol === 'proveedor_liquidez' || user.datos_registro?.categoria === 'Liquidez / Efectivo') ? (
+                                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-[10px] font-bold text-amber-800">
+                                            💵 Proveedor de Liquidez: 0% Comisión Plataforma (100% Neto)
+                                          </div>
                                         ) : (
                                           <div><label className="text-[9px] font-bold text-slate-500 block">Comisión (1-10%)</label>
                                             <input type="number" step="0.1" value={approveComision} onChange={e => setApproveComision(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-1.5 text-xs font-bold"/></div>
@@ -3866,7 +4449,7 @@ export default function App() {
                                     ) : (
                                       <div className="flex gap-2">
                                         <button onClick={async () => { if (confirm(`¿Rechazar solicitud de ${user.nombre}?`)) { const { error } = await supabase.from('usuarios_credicrc').delete().eq('id', user.id); if (!error) { addNotification('success', 'Rechazado', `Solicitud de ${user.nombre} eliminada.`); fetchData(); } } }} className="border border-slate-200 hover:bg-red-50 hover:text-red-600 text-slate-500 px-4 py-2 rounded-xl text-xs font-bold transition">Rechazar</button>
-                                        <button onClick={() => { setApprovingUserId(user.id); if (user.rol === 'trabajador') { setApproveSalary('350'); setApproveAntiguedad('3'); } else { setApproveComision('4.0'); } }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow transition flex items-center gap-1"><Check size={12}/>Aprobar</button>
+                                        <button onClick={() => { setApprovingUserId(user.id); if (user.rol === 'trabajador') { setApproveSalary('350'); setApproveAntiguedad('3'); } else if (user.rol === 'proveedor_liquidez' || user.datos_registro?.categoria === 'Liquidez / Efectivo') { setApproveComision('0'); } else { setApproveComision('4.0'); } }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow transition flex items-center gap-1"><Check size={12}/>Aprobar</button>
                                       </div>
                                     )}
                                   </div>
@@ -4138,21 +4721,21 @@ export default function App() {
                                           </div>
                                         </div>
 
-                                        {/* DESPLEGABLE CON LAS COMPRAS DEL TRABAJADOR */}
+                                        {/* DESPLEGABLE CON LAS COMPRAS Y AVANCES DEL TRABAJADOR */}
                                         {isExpanded && (
                                           <div className="p-4 bg-slate-50/50 border-t border-slate-100 animate-fade-in space-y-3">
                                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                              Desglose de Compras de {g.nombre}
+                                              Desglose Consolidado de Nómina (Comercios + Avances de Efectivo) — {g.nombre}
                                             </p>
                                             <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                                               <table className="w-full text-xs text-left text-slate-600">
                                                 <thead className="text-[10px] bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
                                                   <tr>
-                                                    <th className="py-2.5 px-4">Comercio Aliado</th>
-                                                    <th className="py-2.5 px-4">Concepto / Fecha</th>
+                                                    <th className="py-2.5 px-4">Comercio / Proveedor</th>
+                                                    <th className="py-2.5 px-4">Concepto / Desglose</th>
                                                     <th className="py-2.5 px-4 text-right">Cuota ($)</th>
                                                     <th className="py-2.5 px-4 text-right">A Descontar (VES)</th>
-                                                    <th className="py-2.5 px-4 text-center">Estatus</th>
+                                                    <th className="py-2.5 px-4 text-center">Estatus / Acción</th>
                                                   </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
@@ -4162,22 +4745,54 @@ export default function App() {
                                                       ? new Date(i.transacciones_credicrc.fecha_transaccion).toLocaleDateString('es-VE', { day:'2-digit', month:'2-digit', year:'2-digit' })
                                                       : '—';
                                                     return (
-                                                      <tr key={i.id} className="hover:bg-slate-50 transition">
-                                                        <td className="py-3 px-4 font-bold text-slate-800">{p?.nombre ?? '—'}</td>
+                                                      <tr key={i.id} className={`hover:bg-slate-50 transition ${i.es_avance_efectivo ? 'bg-amber-50/25' : ''}`}>
+                                                        <td className="py-3 px-4 font-bold text-slate-800">
+                                                          <div className="flex items-center gap-1.5">
+                                                            {i.es_avance_efectivo && <span className="text-amber-600">💵</span>}
+                                                            <span>{p?.nombre ?? '—'}</span>
+                                                          </div>
+                                                        </td>
                                                         <td className="py-3 px-4 text-slate-500 text-[10px]">
-                                                          Compra {txDate} · <span className="font-semibold text-slate-700">{p?.categoria ?? '—'}</span>
+                                                          {i.es_avance_efectivo ? (
+                                                            <div>
+                                                              <span className="font-black text-amber-800 bg-amber-100/80 border border-amber-200 px-1.5 py-0.5 rounded">
+                                                                Avance Efectivo · Cuota #{i.numero_cuota}/{i.num_cuotas_total}
+                                                              </span>
+                                                              <span className="block mt-1 font-mono text-[10px] text-slate-600">
+                                                                Capital (libera cupo): <strong className="text-emerald-700">${(i.capital_usd ?? 0).toFixed(2)}</strong> · Interés (ganancia): <strong className="text-amber-700">${(i.interes_usd ?? 0).toFixed(2)}</strong>
+                                                              </span>
+                                                            </div>
+                                                          ) : (
+                                                            <>Compra {txDate} · <span className="font-semibold text-slate-700">{p?.categoria ?? '—'}</span></>
+                                                          )}
                                                         </td>
                                                         <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">${i.monto_usd.toFixed(2)}</td>
                                                         <td className="py-3 px-4 text-right font-black text-[#E53935] font-mono">Bs. {(i.monto_usd * bcvRate).toFixed(2)}</td>
                                                         <td className="py-3 px-4 text-center">
-                                                          <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold border ${
-                                                            i.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' :
-                                                            i.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                                            i.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                                            'bg-blue-50 text-blue-600 border-blue-200'
-                                                          }`}>
-                                                            {i.estatus}
-                                                          </span>
+                                                          <div className="flex items-center justify-center gap-2">
+                                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold border ${
+                                                              i.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' :
+                                                              i.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                              i.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                              'bg-blue-50 text-blue-600 border-blue-200'
+                                                            }`}>
+                                                              {i.estatus}
+                                                            </span>
+                                                            {i.estatus === 'Pendiente' && (
+                                                              <button
+                                                                type="button"
+                                                                disabled={isProcessingPayroll}
+                                                                onClick={(e) => {
+                                                                  e.stopPropagation();
+                                                                  handleCollectSingleInstallment(i);
+                                                                }}
+                                                                title={i.es_avance_efectivo ? `Confirmar cobro y liberar $${(i.capital_usd ?? 0).toFixed(2)} de cupo` : 'Confirmar cobro de cuota'}
+                                                                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow-sm transition flex items-center gap-1"
+                                                              >
+                                                                <Check size={11}/> Cobrar
+                                                              </button>
+                                                            )}
+                                                          </div>
                                                         </td>
                                                       </tr>
                                                     );
@@ -4428,9 +5043,9 @@ export default function App() {
                                   </div>
                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                     <div><label className="text-[10px] font-bold text-slate-500 block mb-1">NOMBRE</label><input type="text" value={newProviderNombre} onChange={e => setNewProviderNombre(e.target.value)} placeholder="Ej: Carnicería X" className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold"/></div>
-                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CATEGORÍA</label><select value={newProviderCategoria} onChange={e => setNewProviderCategoria(e.target.value as CategoriaProveedor)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold cursor-pointer">{CATEGORIAS_PROVEEDOR.map(c => <option key={c}>{c}</option>)}</select></div>
+                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CATEGORÍA</label><select value={newProviderCategoria} onChange={e => { const val = e.target.value as CategoriaProveedor; setNewProviderCategoria(val); if (val === 'Liquidez / Efectivo') setNewProviderComision('0'); else if (newProviderComision === '0') setNewProviderComision('4.0'); }} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold cursor-pointer">{CATEGORIAS_PROVEEDOR.map(c => <option key={c}>{c}</option>)}</select></div>
                                     <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CUENTA BANCARIA</label><input type="text" value={newProviderCuenta} onChange={e => setNewProviderCuenta(e.target.value)} placeholder="Banco: 0102-..." className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold"/></div>
-                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">COMISIÓN (%)</label><input type="number" step="0.1" value={newProviderComision} onChange={e => setNewProviderComision(e.target.value)} min="1" max="10" className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold"/></div>
+                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">COMISIÓN (%)</label><input type="number" step="0.1" value={newProviderComision} onChange={e => setNewProviderComision(e.target.value)} min={newProviderCategoria === 'Liquidez / Efectivo' ? '0' : '1'} max="10" disabled={newProviderCategoria === 'Liquidez / Efectivo'} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold disabled:bg-slate-100 disabled:text-slate-400"/></div>
                                   </div>
                                   <div className="flex justify-end gap-2">
                                     <button onClick={() => setShowAddProviderModal(false)} className="bg-white border border-slate-200 text-slate-600 text-xs font-bold py-2.5 px-4 rounded-xl hover:bg-slate-100 transition">Cancelar</button>
@@ -4448,9 +5063,9 @@ export default function App() {
                                   </div>
                                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                     <div><label className="text-[10px] font-bold text-slate-500 block mb-1">NOMBRE</label><input type="text" value={editProviderNombre} onChange={e => setEditProviderNombre(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold"/></div>
-                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CATEGORÍA</label><select value={editProviderCategoria} onChange={e => setEditProviderCategoria(e.target.value as CategoriaProveedor)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold cursor-pointer">{CATEGORIAS_PROVEEDOR.map(c => <option key={c}>{c}</option>)}</select></div>
+                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CATEGORÍA</label><select value={editProviderCategoria} onChange={e => { const val = e.target.value as CategoriaProveedor; setEditProviderCategoria(val); if (val === 'Liquidez / Efectivo') setEditProviderComision('0'); else if (editProviderComision === '0') setEditProviderComision('4.0'); }} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold cursor-pointer">{CATEGORIAS_PROVEEDOR.map(c => <option key={c}>{c}</option>)}</select></div>
                                     <div><label className="text-[10px] font-bold text-slate-500 block mb-1">CUENTA BANCARIA</label><input type="text" value={editProviderCuenta} onChange={e => setEditProviderCuenta(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-bold"/></div>
-                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">COMISIÓN (%)</label><input type="number" step="0.1" value={editProviderComision} onChange={e => setEditProviderComision(e.target.value)} min="1" max="10" className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold"/></div>
+                                    <div><label className="text-[10px] font-bold text-slate-500 block mb-1">COMISIÓN (%)</label><input type="number" step="0.1" value={editProviderComision} onChange={e => setEditProviderComision(e.target.value)} min={editProviderCategoria === 'Liquidez / Efectivo' ? '0' : '1'} max="10" disabled={editProviderCategoria === 'Liquidez / Efectivo'} className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs font-mono font-bold disabled:bg-slate-100 disabled:text-slate-400"/></div>
                                   </div>
                                   <div className="flex justify-end gap-2">
                                     <button onClick={() => setEditingProvider(null)} className="bg-white border border-slate-200 text-slate-600 text-xs font-bold py-2.5 px-4 rounded-xl hover:bg-slate-100 transition">Cancelar</button>

@@ -176,7 +176,44 @@ export interface LineaDomesticaCuota {
   fecha_pago_real: string | null;
 }
 
-// ── Módulo Avance de Efectivo ─────────────────────────────────────────────
+// ── Módulo Avance de Efectivo y Consola de Proveedor de Liquidez ──────────
+export interface ConfiguracionLiquidez {
+  proveedor_id: string;
+  recepcion_activa: boolean;
+  modalidad_recargo: 'porcentaje' | 'monto_fijo';
+  tasa_1_cuota: number;
+  cargo_minimo_1_cuota_usd: number;
+  tasa_2_cuotas: number;
+  tasa_3_cuotas: number;
+  monto_minimo_usd: number;
+  monto_maximo_usd: number;
+  updated_at?: string;
+}
+
+export const DEFAULT_CONFIGURACION_LIQUIDEZ: Omit<ConfiguracionLiquidez, 'proveedor_id'> = {
+  recepcion_activa: true,
+  modalidad_recargo: 'porcentaje',
+  tasa_1_cuota: 10.00,
+  cargo_minimo_1_cuota_usd: 1.50,
+  tasa_2_cuotas: 16.00,
+  tasa_3_cuotas: 24.00,
+  monto_minimo_usd: 10.00,
+  monto_maximo_usd: 40.00,
+};
+
+export function isLiquidityProvider(provider?: {
+  tipo_proveedor?: string | null;
+  categoria?: string | null;
+  nombre?: string | null;
+} | null): boolean {
+  if (!provider) return false;
+  return (
+    provider.tipo_proveedor === 'liquidez' ||
+    provider.categoria === 'Liquidez / Efectivo' ||
+    provider.categoria === 'Proveedor de Liquidez'
+  );
+}
+
 export interface AvanceEfectivoSolicitud {
   id: string;
   trabajador_id: string;
@@ -189,9 +226,30 @@ export interface AvanceEfectivoSolicitud {
   monto_total_usd: number;
   valor_cuota_usd: number;
   tasa_bcv_registro: number;
-  estatus: 'Pendiente' | 'Aprobado' | 'Rechazado' | 'En Pago' | 'Completado';
+  estatus: 'Pendiente' | 'Aprobado' | 'Desembolsado' | 'Rechazado' | 'En Pago' | 'Completado';
+  banco_trabajador?: string | null;
+  telefono_pago_movil?: string | null;
+  cedula_pago_movil?: string | null;
+  referencia_desembolso?: string | null;
+  fecha_desembolso?: string | null;
+  motivo_rechazo?: string | null;
+  notas?: string | null;
   created_at: string;
+  updated_at?: string;
   cuotas?: AvanceEfectivoCuota[];
+  trabajadores_crc?: {
+    id: string;
+    nombre: string;
+    cedula: string;
+    cargo?: string;
+    limite_total?: number;
+    limite_disponible?: number;
+  };
+  proveedores_aliados?: {
+    id: string;
+    nombre: string;
+    categoria?: string;
+  };
 }
 
 export interface AvanceEfectivoCuota {
@@ -203,33 +261,140 @@ export interface AvanceEfectivoCuota {
   interes_usd: number;
   fecha_cobro: string;
   estatus: 'Pendiente' | 'Cobrado' | 'Vencido' | 'Pagado Directo';
+  fecha_pago_real?: string | null;
+  tasa_bcv_pago?: number | null;
+  monto_ves_pagado?: number | null;
+  created_at?: string;
+  avance_efectivo_solicitudes?: AvanceEfectivoSolicitud;
 }
 
-// ── Utilidades de cálculo de intereses ───────────────────────────────────
+// Helper para extraer metadatos bancarios/referencia tanto de columnas nativas como de JSON en notas
+export function parseSolicitudMetadata(sol: AvanceEfectivoSolicitud): {
+  banco: string;
+  telefono: string;
+  cedula: string;
+  referencia: string;
+  fechaDesembolso: string | null;
+  motivoRechazo: string | null;
+  notaLibre: string;
+} {
+  let parsed: any = {};
+  if (sol.notas && sol.notas.trim().startsWith('{')) {
+    try {
+      parsed = JSON.parse(sol.notas);
+    } catch {
+      parsed = {};
+    }
+  }
+  return {
+    banco: sol.banco_trabajador || parsed.banco_trabajador || '',
+    telefono: sol.telefono_pago_movil || parsed.telefono_pago_movil || '',
+    cedula: sol.cedula_pago_movil || parsed.cedula_pago_movil || sol.trabajadores_crc?.cedula || '',
+    referencia: sol.referencia_desembolso || parsed.referencia_desembolso || '',
+    fechaDesembolso: sol.fecha_desembolso || parsed.fecha_desembolso || null,
+    motivoRechazo: sol.motivo_rechazo || parsed.motivo_rechazo || null,
+    notaLibre: parsed.nota_libre ?? (sol.notas && !sol.notas.trim().startsWith('{') ? sol.notas : ''),
+  };
+}
+
+// ── Utilidades de cálculo de intereses (con soporte de piso mínimo y cuadre al centavo) ──
+export function calcularAvancePorPlazo(
+  capital: number,
+  numCuotas: 1 | 2 | 3,
+  config?: Partial<ConfiguracionLiquidez>
+): {
+  modalidad: 'porcentaje' | 'monto_fijo';
+  tasaAplicada: number;
+  pisoAplicado: boolean;
+  interesTotal: number;
+  montoTotal: number;
+  valorCuota: number;
+  cuotas: { numero: number; capital: number; interes: number; total: number }[];
+} {
+  const cfg = { ...DEFAULT_CONFIGURACION_LIQUIDEZ, ...config };
+  const modalidad = cfg.modalidad_recargo;
+  const tasaAplicada =
+    numCuotas === 1 ? cfg.tasa_1_cuota :
+    numCuotas === 2 ? cfg.tasa_2_cuotas :
+    cfg.tasa_3_cuotas;
+
+  const capRedondeado = Math.round(capital * 100) / 100;
+  let interesTotal = 0;
+  let pisoAplicado = false;
+
+  if (modalidad === 'porcentaje') {
+    const interesBruto = Math.round(capRedondeado * (tasaAplicada / 100) * 100) / 100;
+    if (numCuotas === 1 && interesBruto < cfg.cargo_minimo_1_cuota_usd) {
+      interesTotal = Math.round(cfg.cargo_minimo_1_cuota_usd * 100) / 100;
+      pisoAplicado = true;
+    } else {
+      interesTotal = interesBruto;
+    }
+  } else {
+    // Modalidad Monto Fijo ($) definido directamente para el plazo seleccionado
+    interesTotal = Math.round(tasaAplicada * 100) / 100;
+  }
+
+  const montoTotal = Math.round((capRedondeado + interesTotal) * 100) / 100;
+  const valorCuota = Math.round((montoTotal / numCuotas) * 100) / 100;
+
+  // Desglose por cuota asegurando que SUM(capital) === capRedondeado exacto al centavo
+  const capBase = Math.round((capRedondeado / numCuotas) * 100) / 100;
+  const intBase = Math.round((interesTotal / numCuotas) * 100) / 100;
+  let capAcum = 0;
+  let intAcum = 0;
+
+  const cuotas: { numero: number; capital: number; interes: number; total: number }[] = [];
+  for (let i = 1; i <= numCuotas; i++) {
+    let cCap: number;
+    let cInt: number;
+    if (i < numCuotas) {
+      cCap = capBase;
+      cInt = intBase;
+      capAcum = Math.round((capAcum + cCap) * 100) / 100;
+      intAcum = Math.round((intAcum + cInt) * 100) / 100;
+    } else {
+      cCap = Math.round((capRedondeado - capAcum) * 100) / 100;
+      cInt = Math.round((interesTotal - intAcum) * 100) / 100;
+    }
+    cuotas.push({
+      numero: i,
+      capital: cCap,
+      interes: cInt,
+      total: Math.round((cCap + cInt) * 100) / 100,
+    });
+  }
+
+  return {
+    modalidad,
+    tasaAplicada,
+    pisoAplicado,
+    interesTotal,
+    montoTotal,
+    valorCuota,
+    cuotas,
+  };
+}
+
 export function calcularAvanceEfectivo(
   capital: number,
   numCuotas: number,
   tipoInteres: 'porcentaje' | 'monto_fijo',
-  valorInteres: number
+  valorInteres: number,
+  cargoMinimo1CuotaUsd = 1.50
 ): { interesTotal: number; montoTotal: number; valorCuota: number; cuotas: { capital: number; interes: number; total: number }[] } {
-  let interesTotal: number;
-
-  if (tipoInteres === 'porcentaje') {
-    interesTotal = Math.round(capital * (valorInteres / 100) * 100) / 100;
-  } else {
-    interesTotal = Math.round(valorInteres * numCuotas * 100) / 100;
-  }
-
-  const montoTotal = Math.round((capital + interesTotal) * 100) / 100;
-  const valorCuota = Math.round((montoTotal / numCuotas) * 100) / 100;
-  const capitalCuota = Math.round((capital / numCuotas) * 100) / 100;
-  const interesCuota = Math.round((valorCuota - capitalCuota) * 100) / 100;
-
-  const cuotas = Array.from({ length: numCuotas }, () => ({
-    capital: capitalCuota,
-    interes: interesCuota,
-    total: valorCuota,
-  }));
-
-  return { interesTotal, montoTotal, valorCuota, cuotas };
+  const n = (numCuotas === 1 || numCuotas === 2 || numCuotas === 3 ? numCuotas : 1) as 1 | 2 | 3;
+  const res = calcularAvancePorPlazo(capital, n, {
+    modalidad_recargo: tipoInteres,
+    tasa_1_cuota: valorInteres,
+    tasa_2_cuotas: valorInteres,
+    tasa_3_cuotas: valorInteres,
+    cargo_minimo_1_cuota_usd: cargoMinimo1CuotaUsd,
+  });
+  return {
+    interesTotal: res.interesTotal,
+    montoTotal: res.montoTotal,
+    valorCuota: res.valorCuota,
+    cuotas: res.cuotas.map(c => ({ capital: c.capital, interes: c.interes, total: c.total })),
+  };
 }

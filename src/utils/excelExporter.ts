@@ -34,8 +34,11 @@ export interface LiquidationData {
 const COLOR_HEADER_BG = 'FF002855'; // Navy Ejecutivo
 const COLOR_HEADER_TEXT = 'FFFFFFFF'; // Blanco
 const COLOR_SUBHEADER_BG = 'FF1E3A8A'; // Navy Claro
+const COLOR_SUBHEADER_TEXT = 'FFFFFFFF'; // Blanco Subheader
 const COLOR_KPI_BG = 'FFF1F5F9'; // Slate 100
 const COLOR_BORDER = 'FFE2E8F0'; // Slate 200
+const COLOR_GREEN_TEXT = 'FF065F46'; // Emerald 800
+const COLOR_GREEN_BG = 'FFD1FAE5'; // Emerald 100
 
 const thinBorder: Partial<ExcelJS.Borders> = {
   top: { style: 'thin', color: { argb: COLOR_BORDER } },
@@ -724,6 +727,275 @@ export async function exportPayrollReportExcel(
   // ═══════════════════════════════════════════════════════════════════════════
   const buffer = await workbook.xlsx.writeBuffer();
   const filename = `Nomina_CrediCRC_${monthFilter}.xlsx`;
+
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Genera y descarga el Reporte Financiero de Liquidez en Excel (.xlsx)
+ * 0% Comisión de Plataforma (100% Neto): El 100% del capital recuperado más el 100% de los intereses
+ * generados pertenecen íntegramente al Proveedor de Liquidez.
+ */
+export async function exportLiquidityReportExcel(
+  providerName: string,
+  solicitudes: import('../types').AvanceEfectivoSolicitud[],
+  cuotas: import('../types').AvanceEfectivoCuota[],
+  workers: WorkerData[],
+  bcvRate: number
+) {
+  const { parseSolicitudMetadata } = await import('../types');
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'CrediCRC - Consola Financiera de Liquidez';
+  workbook.created = new Date();
+
+  const workerMap: Record<string, WorkerData> = {};
+  workers.forEach(w => {
+    workerMap[w.id] = w;
+  });
+
+  // Solicitudes activas / desembolsadas / completadas
+  const activeOrCompleted = solicitudes.filter(s =>
+    s.estatus === 'Aprobado' || s.estatus === 'Desembolsado' || s.estatus === 'En Pago' || s.estatus === 'Completado'
+  );
+
+  // KPIs
+  let capitalTotalPrestadoActivo = 0;
+  let interesesProyectados = 0;
+  let totalRecaudadoCiclo = 0;
+  let pendienteCobrarNomina = 0;
+
+  activeOrCompleted.forEach(sol => {
+    const solCuotas = cuotas.filter(c => c.solicitud_id === sol.id);
+    if (sol.estatus !== 'Completado') {
+      const capPend = solCuotas.length > 0
+        ? solCuotas.filter(c => c.estatus === 'Pendiente').reduce((s, c) => s + Number(c.capital_usd || 0), 0)
+        : Number(sol.monto_capital_usd || 0);
+      capitalTotalPrestadoActivo += capPend;
+    }
+    interesesProyectados += Number(sol.monto_interes_total_usd || 0);
+
+    if (solCuotas.length > 0) {
+      solCuotas.forEach(c => {
+        if (c.estatus === 'Cobrado' || c.estatus === 'Pagado Directo') {
+          totalRecaudadoCiclo += Number(c.monto_usd || 0);
+        } else if (c.estatus === 'Pendiente') {
+          pendienteCobrarNomina += Number(c.monto_usd || 0);
+        }
+      });
+    } else if (sol.estatus !== 'Completado') {
+      pendienteCobrarNomina += Number(sol.monto_total_usd || 0);
+    } else {
+      totalRecaudadoCiclo += Number(sol.monto_total_usd || 0);
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PESTAÑA 1: REPORTE FINANCIERO DE PRÉSTAMOS Y LIQUIDEZ (100% NETO)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const ws = workbook.addWorksheet('Reporte de Liquidez');
+  ws.views = [{ showGridLines: true }];
+
+  ws.mergeCells('A1:P2');
+  const banner = ws.getCell('A1');
+  banner.value = `CONSOLA FINANCIERA DE LIQUIDEZ — ${providerName.toUpperCase()} (0% COMISIÓN PLATAFORMA · 100% NETO)`;
+  banner.font = { name: 'Arial', size: 13, bold: true, color: { argb: COLOR_HEADER_TEXT } };
+  banner.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_HEADER_BG } };
+  banner.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  ws.getCell('A3').value = 'Fecha de Emisión:';
+  ws.getCell('A3').font = { bold: true, size: 9 };
+  ws.getCell('B3').value = new Date().toLocaleString('es-VE');
+  ws.getCell('B3').font = { size: 9 };
+
+  ws.getCell('D3').value = 'Tasa BCV Referencial:';
+  ws.getCell('D3').font = { bold: true, size: 9 };
+  ws.getCell('E3').value = bcvRate;
+  ws.getCell('E3').numFmt = 'Bs. #,##0.00';
+  ws.getCell('E3').font = { bold: true, size: 9 };
+
+  ws.getCell('G3').value = 'Comisión Plataforma:';
+  ws.getCell('G3').font = { bold: true, size: 9 };
+  ws.getCell('H3').value = '0.00% (100% Neto Proveedor de Liquidez)';
+  ws.getCell('H3').font = { bold: true, size: 9, color: { argb: COLOR_GREEN_TEXT } };
+
+  // Tarjetas de Resumen en filas 5 y 6
+  const kpiLabels = [
+    ['A5', 'Capital Total Prestado Activo ($)', capitalTotalPrestadoActivo],
+    ['D5', 'Intereses Proyectados / Ganancia Neta ($)', interesesProyectados],
+    ['G5', 'Total Recaudado en el Ciclo ($)', totalRecaudadoCiclo],
+    ['J5', 'Pendiente por Cobrar en Nómina ($)', pendienteCobrarNomina],
+  ] as const;
+
+  kpiLabels.forEach(([colRef, label, val]) => {
+    const colLetter = colRef.replace(/[0-9]/g, '');
+    const lblCell = ws.getCell(`${colLetter}5`);
+    lblCell.value = label;
+    lblCell.font = { name: 'Arial', size: 8, bold: true, color: { argb: COLOR_SUBHEADER_TEXT } };
+    lblCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_SUBHEADER_BG } };
+
+    const valCell = ws.getCell(`${colLetter}6`);
+    valCell.value = Math.round(val * 100) / 100;
+    valCell.numFmt = '$#,##0.00';
+    valCell.font = { name: 'Arial', size: 11, bold: true, color: { argb: COLOR_GREEN_TEXT } };
+    valCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_GREEN_BG } };
+  });
+
+  const headers = [
+    '#',
+    'Fecha Solicitud',
+    'Fecha Desembolso',
+    'Trabajador',
+    'Cédula',
+    'Datos Pago Móvil / Banco',
+    'Ref. Desembolso',
+    'Capital Prestado ($)',
+    'Tasa / Modalidad',
+    'Ganancia Neta Interés ($)',
+    'Total a Pagar ($)',
+    'Plazo',
+    'Cuotas Pagadas',
+    'Cuotas Pendientes',
+    'Monto Recaudado ($)',
+    'Saldo Pendiente ($)',
+    'Estatus',
+  ];
+
+  const headerRow = ws.getRow(8);
+  headerRow.values = headers;
+  headerRow.font = { name: 'Arial', size: 9, bold: true, color: { argb: COLOR_HEADER_TEXT } };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_HEADER_BG } };
+  headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  solicitudes.forEach((sol, idx) => {
+    const rowNum = 9 + idx;
+    const r = ws.getRow(rowNum);
+    const w = sol.trabajadores_crc || workerMap[sol.trabajador_id];
+    const meta = parseSolicitudMetadata(sol);
+    const solCuotas = cuotas.filter(c => c.solicitud_id === sol.id);
+
+    const pagadasCount = solCuotas.filter(c => c.estatus === 'Cobrado' || c.estatus === 'Pagado Directo').length;
+    const pendientesCount = solCuotas.length > 0
+      ? solCuotas.filter(c => c.estatus === 'Pendiente').length
+      : (sol.estatus === 'Rechazado' ? 0 : sol.num_cuotas);
+
+    const montoRecaudado = solCuotas
+      .filter(c => c.estatus === 'Cobrado' || c.estatus === 'Pagado Directo')
+      .reduce((s, c) => s + Number(c.monto_usd || 0), 0);
+
+    const saldoPendiente = sol.estatus === 'Rechazado'
+      ? 0
+      : solCuotas.length > 0
+        ? solCuotas.filter(c => c.estatus === 'Pendiente').reduce((s, c) => s + Number(c.monto_usd || 0), 0)
+        : Number(sol.monto_total_usd || 0);
+
+    const fechaSolStr = sol.created_at
+      ? new Date(sol.created_at).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '—';
+    const fechaDesStr = meta.fechaDesembolso
+      ? new Date(meta.fechaDesembolso).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '—';
+
+    const datosPM = [meta.banco, meta.telefono, meta.cedula].filter(Boolean).join(' · ') || '—';
+    const tasaStr = sol.tipo_interes === 'porcentaje'
+      ? `${Number(sol.valor_interes).toFixed(0)}%`
+      : `$${Number(sol.valor_interes).toFixed(2)} fijo`;
+
+    r.values = [
+      idx + 1,
+      fechaSolStr,
+      fechaDesStr,
+      w?.nombre || 'Trabajador',
+      w?.cedula || meta.cedula || '—',
+      datosPM,
+      meta.referencia || '—',
+      Number(sol.monto_capital_usd || 0),
+      tasaStr,
+      Number(sol.monto_interes_total_usd || 0),
+      Number(sol.monto_total_usd || 0),
+      `${sol.num_cuotas} ${sol.num_cuotas === 1 ? 'cuota' : 'cuotas'}`,
+      pagadasCount,
+      pendientesCount,
+      Math.round(montoRecaudado * 100) / 100,
+      Math.round(saldoPendiente * 100) / 100,
+      sol.estatus === 'En Pago' ? 'Desembolsado / Activo' : sol.estatus,
+    ];
+
+    r.font = { name: 'Arial', size: 9 };
+    r.getCell(1).alignment = { horizontal: 'center' };
+    r.getCell(2).alignment = { horizontal: 'center' };
+    r.getCell(3).alignment = { horizontal: 'center' };
+    r.getCell(5).alignment = { horizontal: 'center' };
+    r.getCell(7).alignment = { horizontal: 'center' };
+    r.getCell(8).numFmt = '$#,##0.00';
+    r.getCell(9).alignment = { horizontal: 'center' };
+    r.getCell(10).numFmt = '$#,##0.00';
+    r.getCell(11).numFmt = '$#,##0.00';
+    r.getCell(12).alignment = { horizontal: 'center' };
+    r.getCell(13).alignment = { horizontal: 'center' };
+    r.getCell(14).alignment = { horizontal: 'center' };
+    r.getCell(15).numFmt = '$#,##0.00';
+    r.getCell(16).numFmt = '$#,##0.00';
+    r.getCell(17).alignment = { horizontal: 'center' };
+
+    for (let c = 1; c <= 17; c++) {
+      r.getCell(c).border = thinBorder;
+    }
+  });
+
+  if (solicitudes.length > 0) {
+    const totRowNum = 9 + solicitudes.length;
+    const lastDataRow = totRowNum - 1;
+    const totRow = ws.getRow(totRowNum);
+
+    totRow.values = [
+      'TOTALES',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      { formula: `SUM(H9:H${lastDataRow})` },
+      '',
+      { formula: `SUM(J9:J${lastDataRow})` },
+      { formula: `SUM(K9:K${lastDataRow})` },
+      '',
+      { formula: `SUM(M9:M${lastDataRow})` },
+      { formula: `SUM(N9:N${lastDataRow})` },
+      { formula: `SUM(O9:O${lastDataRow})` },
+      { formula: `SUM(P9:P${lastDataRow})` },
+      '',
+    ];
+
+    totRow.font = { name: 'Arial', size: 9, bold: true, color: { argb: COLOR_GREEN_TEXT } };
+    [8, 10, 11, 15, 16].forEach(cIdx => {
+      totRow.getCell(cIdx).numFmt = '$#,##0.00';
+    });
+    for (let c = 1; c <= 17; c++) {
+      totRow.getCell(c).border = doubleBottomBorder;
+      totRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_GREEN_BG } };
+    }
+  }
+
+  const colWidths = [5, 14, 15, 26, 14, 28, 16, 18, 14, 20, 18, 12, 14, 15, 18, 18, 18];
+  colWidths.forEach((w, i) => {
+    ws.getColumn(i + 1).width = w;
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const safeName = providerName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Reporte_Liquidez_${safeName}_${dateStr}.xlsx`;
 
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
