@@ -398,3 +398,46 @@ export function calcularAvanceEfectivo(
     cuotas: res.cuotas.map(c => ({ capital: c.capital, interes: c.interes, total: c.total })),
   };
 }
+
+// ─── INTERRUPTOR MAESTRO: MODO CORTE DE NÓMINA ('operaciones_compras_activas') ─
+export const MODO_CORTE_MODULO_ID = 'operaciones_compras_activas';
+export const MODO_CORTE_DESC = 'Control global de compras y cobros (Pausa por Corte de Nómina)';
+export const MODO_CORTE_DEFAULT_MSG =
+  'Estamos realizando el corte y conciliación de nómina. Las compras y cobros estarán disponibles nuevamente en breve (aprox. 1 a 2 horas).';
+
+export function getOperacionesComprasStatus(flags: FeatureFlag[]): {
+  operacionesActivas: boolean;
+  enCorteNomina: boolean;
+  mensajeBloqueo: string;
+} {
+  const directFlag = flags.find(f => f.modulo_id === MODO_CORTE_MODULO_ID);
+  if (directFlag) {
+    return {
+      operacionesActivas: directFlag.activo !== false,
+      enCorteNomina: directFlag.activo === false,
+      mensajeBloqueo: (directFlag.mensaje_bloqueo && directFlag.mensaje_bloqueo.trim()) || MODO_CORTE_DEFAULT_MSG,
+    };
+  }
+  // Fallback si la fila aún no fue insertada por SQL y se respaldó en promo_sin_inicial.mensaje_bloqueo
+  const promoFlag = flags.find(f => f.modulo_id === 'promo_sin_inicial');
+  if (promoFlag?.mensaje_bloqueo && promoFlag.mensaje_bloqueo.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(promoFlag.mensaje_bloqueo);
+      if (typeof parsed.operaciones_compras_activas === 'boolean') {
+        return {
+          operacionesActivas: parsed.operaciones_compras_activas,
+          enCorteNomina: !parsed.operaciones_compras_activas,
+          mensajeBloqueo: (parsed.mensaje_bloqueo && String(parsed.mensaje_bloqueo).trim()) || MODO_CORTE_DEFAULT_MSG,
+        };
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return {
+    operacionesActivas: true,
+    enCorteNomina: false,
+    mensajeBloqueo: MODO_CORTE_DEFAULT_MSG,
+  };
+}
+

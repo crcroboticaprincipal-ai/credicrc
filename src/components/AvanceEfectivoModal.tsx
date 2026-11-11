@@ -9,6 +9,7 @@ import {
   calcularAvancePorPlazo,
   isLiquidityProvider,
   parseSolicitudMetadata,
+  getOperacionesComprasStatus,
   type FeatureFlag,
   type ConfiguracionLiquidez,
   type AvanceEfectivoSolicitud,
@@ -179,6 +180,22 @@ export function AvanceEfectivoModal({
 
     setIsSubmitting(true);
     try {
+      // Blindaje en vivo: verificar que operaciones_compras_activas sea TRUE antes de crear solicitud
+      try {
+        const { data: liveFlags } = await supabase.from('feature_flags').select('*');
+        if (liveFlags) {
+          const corte = getOperacionesComprasStatus(liveFlags as FeatureFlag[]);
+          if (corte.enCorteNomina) {
+            onNotification(
+              'warning',
+              '⏸️ Pausa Temporal por Corte de Nómina',
+              corte.mensajeBloqueo || 'En este momento estamos actualizando los descuentos y saldos del periodo. El servicio se restablecerá automáticamente en un par de horas.'
+            );
+            return;
+          }
+        }
+      } catch { /* ignorar error de red y continuar con validación de BD */ }
+
       // Guardar datos de Pago Móvil del trabajador en localStorage para próximas solicitudes
       try {
         localStorage.setItem(storageKey, JSON.stringify({

@@ -14,6 +14,10 @@ import {
 import {
   CATEGORIAS_PROVEEDOR,
   isLiquidityProvider,
+  MODO_CORTE_MODULO_ID,
+  MODO_CORTE_DESC,
+  MODO_CORTE_DEFAULT_MSG,
+  getOperacionesComprasStatus,
   type CategoriaProveedor,
   type FeatureFlag,
   type ProductoProveedor,
@@ -1272,6 +1276,22 @@ export default function App() {
 
   // ─── ESTADOS V2 ─────────────────────────────────────────────────────────────
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
+  // Interruptor Maestro de Modo Corte de Nómina ('operaciones_compras_activas')
+  const {
+    operacionesActivas,
+    enCorteNomina,
+    mensajeBloqueo: mensajeCorteNomina,
+  } = getOperacionesComprasStatus(featureFlags);
+  const [showCorteNominaModal, setShowCorteNominaModal] = useState(false);
+  const [adminCorteMsgDraft, setAdminCorteMsgDraft] = useState(MODO_CORTE_DEFAULT_MSG);
+  const [isSavingCorteMsg, setIsSavingCorteMsg] = useState(false);
+
+  useEffect(() => {
+    if (mensajeCorteNomina) {
+      setAdminCorteMsgDraft(mensajeCorteNomina);
+    }
+  }, [mensajeCorteNomina]);
+
   // Promoción sin inicial: por defecto ACTIVA (fail-safe) hasta que el admin la apague
   const promoSinInicial = featureFlags.find(f => f.modulo_id === PROMO_SIN_INICIAL_ID)?.activo ?? true;
   const prevPromoRef = useRef(promoSinInicial);
@@ -1495,6 +1515,17 @@ export default function App() {
         if (!ff.some(f => f.modulo_id === PROMO_SIN_INICIAL_ID)) {
           ff.push({ modulo_id: PROMO_SIN_INICIAL_ID, activo: true, descripcion: PROMO_SIN_INICIAL_DESC, mensaje_bloqueo: null, updated_at: new Date().toISOString() });
         }
+        // Bandera de Control Global de Compras y Cobros / Modo Corte de Nómina
+        if (!ff.some(f => f.modulo_id === MODO_CORTE_MODULO_ID)) {
+          const parsedCorte = getOperacionesComprasStatus(ff);
+          ff.unshift({
+            modulo_id: MODO_CORTE_MODULO_ID,
+            activo: parsedCorte.operacionesActivas,
+            descripcion: MODO_CORTE_DESC,
+            mensaje_bloqueo: parsedCorte.mensajeBloqueo,
+            updated_at: new Date().toISOString(),
+          });
+        }
         setFeatureFlags(ff);
       }
       
@@ -1627,19 +1658,121 @@ export default function App() {
   const handleToggleFeatureFlag = useCallback(async (moduloId: string, activo: boolean) => {
     setFeatureFlags(prev => prev.map(f => f.modulo_id === moduloId ? { ...f, activo } : f));
     try {
-      const { data: updated, error } = await supabase.from('feature_flags').update({ activo, updated_at: new Date().toISOString() }).eq('modulo_id', moduloId).select();
+      const currentFlag = featureFlags.find(f => f.modulo_id === moduloId);
+      const { data: updated, error } = await supabase
+        .from('feature_flags')
+        .update({ activo, updated_at: new Date().toISOString() })
+        .eq('modulo_id', moduloId)
+        .select();
       if (error) throw error;
-      // La bandera de la promoción puede no existir aún en BD: se crea en el primer cambio
-      if ((!updated || updated.length === 0) && moduloId === PROMO_SIN_INICIAL_ID) {
-        const { error: insErr } = await supabase.from('feature_flags').insert([{ modulo_id: PROMO_SIN_INICIAL_ID, activo, descripcion: PROMO_SIN_INICIAL_DESC, mensaje_bloqueo: null }]);
-        if (insErr) throw insErr;
+
+      // Si el registro aún no existe en feature_flags (antes de ejecutar la migración SQL):
+      if (!updated || updated.length === 0) {
+        if (moduloId === PROMO_SIN_INICIAL_ID) {
+          const { error: insErr } = await supabase
+            .from('feature_flags')
+            .insert([{ modulo_id: PROMO_SIN_INICIAL_ID, activo, descripcion: PROMO_SIN_INICIAL_DESC, mensaje_bloqueo: null }]);
+          if (insErr) throw insErr;
+        } else if (moduloId === MODO_CORTE_MODULO_ID) {
+          const msgToSave = currentFlag?.mensaje_bloqueo || adminCorteMsgDraft || MODO_CORTE_DEFAULT_MSG;
+          // 1. Intentar INSERT directo en feature_flags
+          const { error: insErr } = await supabase
+            .from('feature_flags')
+            .insert([{
+              modulo_id: MODO_CORTE_MODULO_ID,
+              activo,
+              descripcion: MODO_CORTE_DESC,
+              mensaje_bloqueo: msgToSave,
+            }]);
+          // 2. Si aún no se ha corrido el SQL con la política INSERT, persistir en promo_sin_inicial.mensaje_bloqueo (UPDATE habilitado con Realtime activo)
+          if (insErr) {
+            await supabase
+              .from('feature_flags')
+              .update({
+                mensaje_bloqueo: JSON.stringify({
+                  operaciones_compras_activas: activo,
+                  mensaje_bloqueo: msgToSave,
+                }),
+                updated_at: new Date().toISOString(),
+              })
+              .eq('modulo_id', PROMO_SIN_INICIAL_ID);
+          }
+        }
+      } else if (moduloId === MODO_CORTE_MODULO_ID) {
+        // Sincronizar también el respaldo JSON en promo_sin_inicial por redundancia en tiempo real
+        const msgToSave = currentFlag?.mensaje_bloqueo || adminCorteMsgDraft || MODO_CORTE_DEFAULT_MSG;
+        void supabase
+          .from('feature_flags')
+          .update({
+            mensaje_bloqueo: JSON.stringify({
+              operaciones_compras_activas: activo,
+              mensaje_bloqueo: msgToSave,
+            }),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('modulo_id', PROMO_SIN_INICIAL_ID);
       }
-      addNotification('success', 'Módulo Actualizado', `Módulo '${moduloId}' ${activo ? 'activado' : 'desactivado'}.`);
+
+      if (moduloId === MODO_CORTE_MODULO_ID) {
+        addNotification(
+          activo ? 'success' : 'warning',
+          activo ? '🟢 Compras y Cobros Habilitados' : '⏸️ Pausa por Corte de Nómina Activa',
+          activo
+            ? 'El procesamiento de compras, códigos QR y desembolsos se encuentra nuevamente operativo.'
+            : 'Se han pausado temporalmente las compras y cobros en toda la plataforma.'
+        );
+      } else {
+        addNotification('success', 'Módulo Actualizado', `Módulo '${moduloId}' ${activo ? 'activado' : 'desactivado'}.`);
+      }
     } catch (err: any) {
       addNotification('error', 'Error actualizando módulo', err.message);
       fetchData();
     }
-  }, [addNotification, fetchData]);
+  }, [featureFlags, adminCorteMsgDraft, addNotification, fetchData]);
+
+  const handleUpdateFeatureFlagMessage = useCallback(async (moduloId: string, mensaje_bloqueo: string) => {
+    const cleanMsg = mensaje_bloqueo.trim() || MODO_CORTE_DEFAULT_MSG;
+    setIsSavingCorteMsg(true);
+    setFeatureFlags(prev => prev.map(f => f.modulo_id === moduloId ? { ...f, mensaje_bloqueo: cleanMsg } : f));
+    try {
+      const { data: updated, error } = await supabase
+        .from('feature_flags')
+        .update({ mensaje_bloqueo: cleanMsg, updated_at: new Date().toISOString() })
+        .eq('modulo_id', moduloId)
+        .select();
+      if (error) throw error;
+
+      if (moduloId === MODO_CORTE_MODULO_ID) {
+        const currentFlag = featureFlags.find(f => f.modulo_id === MODO_CORTE_MODULO_ID);
+        const currentActivo = currentFlag ? currentFlag.activo : true;
+        if (!updated || updated.length === 0) {
+          await supabase
+            .from('feature_flags')
+            .insert([{
+              modulo_id: MODO_CORTE_MODULO_ID,
+              activo: currentActivo,
+              descripcion: MODO_CORTE_DESC,
+              mensaje_bloqueo: cleanMsg,
+            }]);
+        }
+        await supabase
+          .from('feature_flags')
+          .update({
+            mensaje_bloqueo: JSON.stringify({
+              operaciones_compras_activas: currentActivo,
+              mensaje_bloqueo: cleanMsg,
+            }),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('modulo_id', PROMO_SIN_INICIAL_ID);
+      }
+      addNotification('success', 'Mensaje Actualizado', 'El mensaje informativo de pausa por corte de nómina fue guardado.');
+    } catch (err: any) {
+      addNotification('error', 'Error al guardar mensaje', err.message);
+    } finally {
+      setIsSavingCorteMsg(false);
+    }
+  }, [featureFlags, addNotification]);
 
   const handleAddProducto = useCallback(async (data: { nombre: string; descripcion: string; precio: string; imagen?: File }) => {
     const provId = currentUser?.proveedor_id || activeProviderId;
@@ -1816,6 +1949,17 @@ export default function App() {
           event: '*',
           schema: 'public',
           table: 'avance_efectivo_cuotas',
+        },
+        () => {
+          void fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'feature_flags',
         },
         () => {
           void fetchData();
@@ -2294,13 +2438,70 @@ export default function App() {
     finally { setIsSavingConfig(false); }
   };
 
+  // ─── BLINDAJE EN VIVO: VERIFICAR OPERACIONES DE COMPRAS ACTIVAS ──────────────
+  const verifyComprasActivasLive = useCallback(async (context: 'worker' | 'provider'): Promise<boolean> => {
+    try {
+      const { data: liveFlags } = await supabase.from('feature_flags').select('*');
+      if (liveFlags) {
+        const ff = [...(liveFlags as FeatureFlag[])];
+        const parsedCorte = getOperacionesComprasStatus(ff);
+        if (!ff.some(f => f.modulo_id === MODO_CORTE_MODULO_ID)) {
+          ff.unshift({
+            modulo_id: MODO_CORTE_MODULO_ID,
+            activo: parsedCorte.operacionesActivas,
+            descripcion: MODO_CORTE_DESC,
+            mensaje_bloqueo: parsedCorte.mensajeBloqueo,
+            updated_at: new Date().toISOString(),
+          });
+        }
+        setFeatureFlags(ff);
+        if (parsedCorte.enCorteNomina) {
+          if (context === 'worker') {
+            setShowCorteNominaModal(true);
+          } else {
+            addNotification(
+              'warning',
+              '⏸️ Corte de Nómina en Curso',
+              parsedCorte.mensajeBloqueo || 'Por favor no procese ventas en este momento. El sistema reabrirá la facturación en breve una vez concluya la conciliación administrativa.'
+            );
+          }
+          return false;
+        }
+      } else if (enCorteNomina) {
+        if (context === 'worker') {
+          setShowCorteNominaModal(true);
+        } else {
+          addNotification('warning', '⏸️ Corte de Nómina en Curso', mensajeCorteNomina);
+        }
+        return false;
+      }
+    } catch {
+      if (enCorteNomina) {
+        if (context === 'worker') {
+          setShowCorteNominaModal(true);
+        } else {
+          addNotification('warning', '⏸️ Corte de Nómina en Curso', mensajeCorteNomina);
+        }
+        return false;
+      }
+    }
+    return true;
+  }, [enCorteNomina, mensajeCorteNomina, addNotification]);
+
   // ─── GENERAR QR DE IDENTIDAD (sin montos) ────────────────────────────────────
   const handleGenerateQR = async () => {
     const worker = workers.find(w => w.id === activeWorkerId); if (!worker) return;
     if (worker.qr_bloqueado) { addNotification('error', 'QR Bloqueado', 'Tu QR está bloqueado por un retraso de pago. Contacta administración.'); return; }
+    if (enCorteNomina) {
+      setShowCorteNominaModal(true);
+      return;
+    }
 
     setIsGeneratingQR(true);
     try {
+      const okLive = await verifyComprasActivasLive('worker');
+      if (!okLive) return;
+
       const { data, error } = await supabase.rpc('crear_qr_token_credicrc', {
         p_trabajador_id: worker.id
       });
@@ -2323,6 +2524,8 @@ export default function App() {
   // ─── MANEJAR ESCANEO QR (proveedor) — con reintentos silenciosos ─────────────
   const handleQRScanned = useCallback(async (token: string) => {
     setShowQRScannerModal(false);
+    const okLive = await verifyComprasActivasLive('provider');
+    if (!okLive) return;
     // Retener el token en ref por si hay corte de red durante los reintentos
     pendingTokenRef.current = token;
     setScannedToken(token);
@@ -2399,10 +2602,14 @@ export default function App() {
     };
 
     await attemptValidation(0);
-  }, [activeProviderId, posDays, addNotification]);
+  }, [activeProviderId, posDays, addNotification, verifyComprasActivasLive]);
 
   // Simulación para modo Admin (testing)
   const handleSimulateScan = () => {
+    if (enCorteNomina) {
+      addNotification('warning', '⏸️ Corte de Nómina en Curso', mensajeCorteNomina);
+      return;
+    }
     if (!activeQR) { addNotification('warning', 'Sin QR Activo', 'Genera un QR desde el portal del trabajador primero.'); return; }
     handleQRScanned(activeQR.tokenHash);
   };
@@ -2416,6 +2623,9 @@ export default function App() {
     }
     setIsValidating(true);
     try {
+      const okLive = await verifyComprasActivasLive('provider');
+      if (!okLive) return;
+
       // Promoción sin inicial: se lee la bandera fresca de BD para que el cambio del admin
       // aplique de inmediato aunque el proveedor no haya recargado la app.
       let promoActiva = promoSinInicial;
@@ -2472,6 +2682,10 @@ export default function App() {
 
     setIsProcessingPurchase(true);
     try {
+      // Blindaje definitivo antes de descontar saldo o insertar en transacciones_credicrc
+      const okLive = await verifyComprasActivasLive('provider');
+      if (!okLive) return;
+
       const txId = await supabase.rpc('crear_transaccion_credicrc', {
         p_trabajador_id: worker.id,
         p_proveedor_id: activeProviderId,
@@ -3508,7 +3722,26 @@ export default function App() {
                         </div>
 
                         {/* ── VISTA DESKTOP: Layout original con grid ── */}
-                        <div className="hidden lg:block">
+                        <div className="hidden lg:block space-y-6">
+                          {/* Banner informativo destacado en Modo Corte de Nómina */}
+                          {enCorteNomina && (
+                            <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-red-600 text-white rounded-2xl p-5 shadow-lg border border-amber-300/40 flex items-center justify-between gap-4 animate-fade-in">
+                              <div className="flex items-start gap-3.5">
+                                <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                                  <Clock size={22} className="text-white animate-pulse" />
+                                </div>
+                                <div>
+                                  <span className="inline-block text-[10px] font-black uppercase tracking-wider bg-black/20 px-2.5 py-0.5 rounded-full mb-1">
+                                    ⏸️ Pausa Temporal por Corte de Nómina
+                                  </span>
+                                  <p className="text-sm font-bold text-white leading-relaxed">
+                                    {mensajeCorteNomina}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                           <WorkerCreditCard worker={currentWorker}/>
 
@@ -3576,12 +3809,31 @@ export default function App() {
                                   <Lock size={14}/> QR Bloqueado — Contacta Administración
                                 </div>
                               ) : (
-                                <button onClick={handleGenerateQR} disabled={isGeneratingQR}
-                                  className="w-full bg-gradient-to-r from-[#002855] to-[#073B73] hover:from-[#073B73] hover:to-[#002855] text-white text-xs font-bold py-3.5 px-4 rounded-xl shadow-md transition duration-300 flex items-center justify-center gap-1.5 disabled:opacity-50">
-                                  {isGeneratingQR ? <><RefreshCw size={14} className="animate-spin"/>Generando...</> : <><QrCode size={14} className="text-amber-300"/>Generar Mi QR de Identificación</>}
+                                <button
+                                  onClick={() => {
+                                    if (enCorteNomina) {
+                                      setShowCorteNominaModal(true);
+                                      return;
+                                    }
+                                    void handleGenerateQR();
+                                  }}
+                                  disabled={isGeneratingQR}
+                                  className={`w-full text-white text-xs font-bold py-3.5 px-4 rounded-xl shadow-md transition duration-300 flex items-center justify-center gap-1.5 disabled:opacity-50 ${
+                                    enCorteNomina
+                                      ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700'
+                                      : 'bg-gradient-to-r from-[#002855] to-[#073B73] hover:from-[#073B73] hover:to-[#002855]'
+                                  }`}
+                                >
+                                  {isGeneratingQR ? (
+                                    <><RefreshCw size={14} className="animate-spin"/>Generando...</>
+                                  ) : enCorteNomina ? (
+                                    <><Clock size={14} className="text-amber-200"/>Generar Mi QR de Identificación (En Pausa)</>
+                                  ) : (
+                                    <><QrCode size={14} className="text-amber-300"/>Generar Mi QR de Identificación</>
+                                  )}
                                 </button>
                               )}
-                              {activeQR && activeQR.workerId === currentWorker.id && !showQRModal && (
+                              {activeQR && activeQR.workerId === currentWorker.id && !showQRModal && !enCorteNomina && (
                                 <button onClick={() => setShowQRModal(true)}
                                   className="w-full bg-slate-100 hover:bg-slate-200 text-[#002855] text-xs font-bold py-2.5 px-4 rounded-xl border border-slate-200 transition flex items-center justify-center gap-1.5">
                                   <Eye size={14}/> Ver QR Activo ({Math.floor(qrCountdown / 60)}:{(qrCountdown % 60).toString().padStart(2, '0')})
@@ -3589,7 +3841,13 @@ export default function App() {
                               )}
                               <FeatureGuard moduloId="avance_efectivo" flags={featureFlags}>
                                 <button
-                                  onClick={() => setShowDesktopAvanceModal(true)}
+                                  onClick={() => {
+                                    if (enCorteNomina) {
+                                      setShowCorteNominaModal(true);
+                                      return;
+                                    }
+                                    setShowDesktopAvanceModal(true);
+                                  }}
                                   className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-black py-3 px-4 rounded-xl shadow-md transition flex items-center justify-center gap-1.5"
                                 >
                                   <Banknote size={15}/> 💵 Solicitar Avance de Efectivo (${currentWorker.limite_disponible.toFixed(2)} disp.)
@@ -3621,6 +3879,49 @@ export default function App() {
                             onSuccess={fetchData}
                             onNotification={addNotification}
                           />
+                        )}
+
+                        {/* Modal Elegante de Pausa Temporal por Corte de Nómina (Desktop) */}
+                        {showCorteNominaModal && (
+                          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={() => setShowCorteNominaModal(false)}>
+                            <div
+                              className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-amber-200"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-red-600 p-6 text-white text-center relative">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowCorteNominaModal(false)}
+                                  className="absolute top-4 right-4 text-white/80 hover:text-white p-1"
+                                >
+                                  <X size={18} />
+                                </button>
+                                <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner">
+                                  <Clock size={32} className="text-white animate-pulse" />
+                                </div>
+                                <h3 className="text-base font-black tracking-tight">
+                                  ⏸️ Pausa Temporal por Corte de Nómina
+                                </h3>
+                              </div>
+                              <div className="p-6 space-y-4 text-center">
+                                <p className="text-sm font-bold text-slate-800 leading-relaxed">
+                                  ⏸️ Pausa Temporal por Corte de Nómina: En este momento estamos actualizando los descuentos y saldos del periodo. El servicio se restablecerá automáticamente en un par de horas.
+                                </p>
+                                {mensajeCorteNomina && (
+                                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs font-semibold text-amber-900">
+                                    {mensajeCorteNomina}
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setShowCorteNominaModal(false)}
+                                  className="w-full py-3.5 rounded-2xl bg-[#002855] hover:bg-[#073B73] text-white font-black text-xs uppercase tracking-wider shadow-md transition"
+                                >
+                                  Entendido
+                                </button>
+                              </div>
+                            </div>
+                          </div>
                         )}
 
                         {/* Cuotas y Pagos Directos */}
@@ -3908,6 +4209,8 @@ export default function App() {
                           null
                         }
                         bcvRate={bcvRate}
+                        enCorteNomina={enCorteNomina}
+                        mensajeCorteNomina={mensajeCorteNomina}
                         onSaveConfig={handleSaveConfigLiquidez}
                         onRefresh={fetchData}
                         onNotification={addNotification}
@@ -3942,7 +4245,19 @@ export default function App() {
                           bcvRate={bcvRate}
                           activeQR={activeQR}
                           currentUserRole={currentUser?.rol}
-                          onOpenScanner={() => setShowQRScannerModal(true)}
+                          enCorteNomina={enCorteNomina}
+                          mensajeCorteNomina={mensajeCorteNomina}
+                          onOpenScanner={() => {
+                            if (enCorteNomina) {
+                              addNotification(
+                                'warning',
+                                '⏸️ Corte de Nómina en Curso',
+                                'Por favor no procese ventas en este momento. El sistema reabrirá la facturación en breve una vez concluya la conciliación administrativa.'
+                              );
+                              return;
+                            }
+                            setShowQRScannerModal(true);
+                          }}
                           onSimulateScan={handleSimulateScan}
                           onCancel={() => {
                             setScannedWorkerInfo(null);
@@ -3980,7 +4295,17 @@ export default function App() {
                             bcvRate={bcvRate}
                             flags={featureFlags}
                             posSlot={posSlotNode}
-                            onOpenScanner={() => setShowQRScannerModal(true)}
+                            onOpenScanner={() => {
+                              if (enCorteNomina) {
+                                addNotification(
+                                  'warning',
+                                  '⏸️ Corte de Nómina en Curso',
+                                  'Por favor no procese ventas en este momento. El sistema reabrirá la facturación en breve una vez concluya la conciliación administrativa.'
+                                );
+                                return;
+                              }
+                              setShowQRScannerModal(true);
+                            }}
                             onAddProduct={handleAddProducto}
                             onToggleProduct={handleToggleProducto}
                             onToggleStock={handleToggleStock}
@@ -4365,6 +4690,89 @@ export default function App() {
                     </div>
                     )}
 
+                    {/* Tarjeta Destacada de Acceso Rápido: Estado de Caja / Modo Corte de Nómina */}
+                    <div className={`rounded-2xl border-2 p-5 shadow-md transition-all ${
+                      operacionesActivas
+                        ? 'bg-gradient-to-r from-emerald-50 via-white to-green-50 border-emerald-300'
+                        : 'bg-gradient-to-r from-amber-50 via-orange-50 to-red-50 border-amber-400 ring-2 ring-amber-200'
+                    }`}>
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-start gap-3.5">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm ${
+                            operacionesActivas ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white animate-pulse'
+                          }`}>
+                            <Clock size={24} />
+                          </div>
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                Estado de Caja / Modo Corte de Nómina
+                              </span>
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                                operacionesActivas
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : 'bg-red-100 text-red-800 border-red-300'
+                              }`}>
+                                {operacionesActivas ? '🟢 Compras y Cobros Habilitados' : '⏸️ Pausa Temporal por Corte de Nómina Activa'}
+                              </span>
+                            </div>
+                            <h3 className={`text-sm md:text-base font-black mt-1 ${
+                              operacionesActivas ? 'text-emerald-900' : 'text-amber-900'
+                            }`}>
+                              {operacionesActivas
+                                ? 'Operaciones Transaccionales Activas en Toda la Plataforma'
+                                : 'Modo Corte de Nómina en Curso — Compras, Códigos QR y Desembolsos Congelados'}
+                            </h3>
+                            <p className="text-xs text-slate-600 font-semibold mt-0.5">
+                              {operacionesActivas
+                                ? 'Los trabajadores y proveedores pueden generar QR, procesar ventas y solicitar avances con normalidad.'
+                                : 'Los usuarios pueden consultar sus saldos y descargar reportes en Excel, pero las nuevas compras y cobros están temporalmente bloqueados.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFeatureFlag(MODO_CORTE_MODULO_ID, !operacionesActivas)}
+                            className={`px-5 py-3.5 rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg transition flex items-center gap-2 active:scale-[0.98] ${
+                              operacionesActivas
+                                ? 'bg-gradient-to-r from-amber-500 to-red-600 hover:from-amber-600 hover:to-red-700 text-white'
+                                : 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white'
+                            }`}
+                          >
+                            {operacionesActivas ? (
+                              <><Clock size={15} /> Activar Modo Corte (Pausar Caja)</>
+                            ) : (
+                              <><CheckCircle2 size={15} /> Reanudar Compras y Cobros</>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Personalización opcional del mensaje_bloqueo */}
+                      <div className="mt-4 pt-3.5 border-t border-slate-200/80 flex flex-col md:flex-row md:items-center gap-2.5">
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider whitespace-nowrap">
+                          Mensaje Informativo de Bloqueo:
+                        </label>
+                        <input
+                          type="text"
+                          value={adminCorteMsgDraft}
+                          onChange={e => setAdminCorteMsgDraft(e.target.value)}
+                          placeholder={MODO_CORTE_DEFAULT_MSG}
+                          className="flex-1 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#002855] focus:ring-2 focus:ring-[#002855]/20"
+                        />
+                        <button
+                          type="button"
+                          disabled={isSavingCorteMsg}
+                          onClick={() => handleUpdateFeatureFlagMessage(MODO_CORTE_MODULO_ID, adminCorteMsgDraft)}
+                          className="bg-[#002855] hover:bg-[#073B73] text-white text-[11px] font-black px-4 py-2 rounded-xl shadow-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {isSavingCorteMsg ? <><RefreshCw size={12} className="animate-spin" /> Guardando...</> : <><Check size={12} /> Guardar Mensaje</>}
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Tabs admin — filtrados según rol: Tesorería solo ve nómina, pagos directos y liquidación */}
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                       <div className="flex overflow-x-auto border-b border-slate-200 bg-slate-50">
@@ -4393,7 +4801,11 @@ export default function App() {
                       <div className="p-6">
                         {/* Feature Flags tab V2 */}
                         {adminTab === 'feature-flags' && (
-                          <FeatureFlagPanel flags={featureFlags} onToggle={handleToggleFeatureFlag} />
+                          <FeatureFlagPanel
+                            flags={featureFlags}
+                            onToggle={handleToggleFeatureFlag}
+                            onUpdateMessage={handleUpdateFeatureFlagMessage}
+                          />
                         )}
 
                         {/* Dashboard tab */}

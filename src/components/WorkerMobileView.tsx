@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { FeatureFlag, ProductoProveedor, Order, ConfiguracionLiquidez, AvanceEfectivoSolicitud } from '../types';
-import { ORDER_STATUS_CONFIG, isLiquidityProvider } from '../types';
+import { ORDER_STATUS_CONFIG, isLiquidityProvider, getOperacionesComprasStatus } from '../types';
 import { FeatureGuard } from './FeatureGuard';
 import { TiendaOnlineModal } from './TiendaOnlineModal';
 import { LineaDomesticaModal } from './LineaDomesticaModal';
@@ -107,6 +107,9 @@ export const WorkerMobileView = memo(function WorkerMobileView({
   const [showTienda, setShowTienda] = useState<string | null>(null); // proveedorId
   const [showLineaDom, setShowLineaDom] = useState(false);
   const [showAvanceEf, setShowAvanceEf] = useState(false);
+  const [showCorteModal, setShowCorteModal] = useState(false);
+
+  const { enCorteNomina, mensajeBloqueo: mensajeCorteNomina } = getOperacionesComprasStatus(flags);
 
   // Direct payment form
   const [dpCuotaId, setDpCuotaId] = useState('');
@@ -176,17 +179,45 @@ export const WorkerMobileView = memo(function WorkerMobileView({
       {/* ─── ÁREA PRINCIPAL (scroll nativo y fluido en toda la pantalla) ─── */}
       <main className="flex-1 w-full pb-36">
 
+        {/* Banner destacado de Modo Corte de Nómina */}
+        {enCorteNomina && (
+          <div className="mx-4 mt-4 bg-gradient-to-r from-amber-500 via-orange-500 to-red-600 text-white rounded-2xl p-4 shadow-lg border border-amber-300/40 animate-fade-in">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Clock size={20} className="text-white animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="inline-block text-[10px] font-black uppercase tracking-wider bg-black/20 px-2.5 py-0.5 rounded-full mb-1">
+                  ⏸️ Pausa Temporal por Corte de Nómina
+                </span>
+                <p className="text-xs font-bold leading-relaxed text-white/95">
+                  {mensajeCorteNomina}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ════ TAB: INICIO ════ */}
         {activeTab === 'inicio' && (
           <div className="p-4 space-y-4">
 
             {/* Botón QR prominente */}
             <button
-              onClick={() => { onGenerateQR(); setShowQRSheet(true); }}
+              onClick={() => {
+                if (enCorteNomina) {
+                  setShowCorteModal(true);
+                  return;
+                }
+                onGenerateQR();
+                setShowQRSheet(true);
+              }}
               disabled={isGeneratingQR || worker.qr_bloqueado}
               className={`w-full py-5 rounded-2xl text-white font-black text-base shadow-lg transition flex items-center justify-center gap-3 ${
                 worker.qr_bloqueado
                   ? 'bg-slate-300 opacity-60'
+                  : enCorteNomina
+                  ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 active:scale-[0.98]'
                   : 'bg-gradient-to-r from-[#002855] to-[#073B73] hover:from-[#073B73] hover:to-[#002855] active:scale-[0.98]'
               }`}
             >
@@ -194,13 +225,15 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                 <><Lock size={20} /> QR Bloqueado — Contacta Administración</>
               ) : isGeneratingQR ? (
                 <><RefreshCw size={20} className="animate-spin" /> Generando QR...</>
+              ) : enCorteNomina ? (
+                <><Clock size={22} className="text-amber-200" /> Mostrar Mi Código QR (En Pausa)</>
               ) : (
                 <><QrCode size={22} className="text-amber-300" /> Mostrar Mi Código QR</>
               )}
             </button>
 
             {/* QR activo badge */}
-            {activeQR && qrCountdown > 0 && (
+            {activeQR && qrCountdown > 0 && !enCorteNomina && (
               <button
                 onClick={() => setShowQRSheet(true)}
                 className="w-full py-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 text-xs font-bold flex items-center justify-center gap-2"
@@ -258,7 +291,13 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                   <p className="text-blue-200 text-[10px] font-medium mt-0.5">Explora catálogos de proveedores aliados</p>
                 </div>
                 <button
-                  onClick={() => setActiveTab('comercios')}
+                  onClick={() => {
+                    if (enCorteNomina) {
+                      setShowCorteModal(true);
+                      return;
+                    }
+                    setActiveTab('comercios');
+                  }}
                   className="bg-amber-400 text-[#002855] font-black text-xs px-3.5 py-2 rounded-xl shadow hover:bg-amber-300 transition flex-shrink-0 flex items-center gap-1"
                 >
                   <Store size={12} /> Ir a Tiendas
@@ -274,7 +313,16 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                     <ShoppingCart size={14} className="text-[#64B5F6]" />
                     <span className="text-xs font-black text-slate-700 uppercase tracking-wide">Mis Pedidos Online</span>
                   </div>
-                  <button onClick={() => setActiveTab('comercios')} className="text-[10px] font-bold text-[#002855] hover:underline">
+                  <button
+                    onClick={() => {
+                      if (enCorteNomina) {
+                        setShowCorteModal(true);
+                        return;
+                      }
+                      setActiveTab('comercios');
+                    }}
+                    className="text-[10px] font-bold text-[#002855] hover:underline"
+                  >
                     + Nuevo Pedido
                   </button>
                 </div>
@@ -307,8 +355,16 @@ export const WorkerMobileView = memo(function WorkerMobileView({
             {/* Cupos especiales */}
             <div className="grid grid-cols-2 gap-3">
               <FeatureGuard moduloId="linea_domestica" flags={flags}>
-                <button onClick={() => setShowLineaDom(true)}
-                  className="bg-white border border-purple-200 rounded-2xl p-4 text-left hover:border-purple-400 hover:shadow-md transition-all active:scale-[0.98]">
+                <button
+                  onClick={() => {
+                    if (enCorteNomina) {
+                      setShowCorteModal(true);
+                      return;
+                    }
+                    setShowLineaDom(true);
+                  }}
+                  className="bg-white border border-purple-200 rounded-2xl p-4 text-left hover:border-purple-400 hover:shadow-md transition-all active:scale-[0.98]"
+                >
                   <span className="text-2xl block mb-2">🏠</span>
                   <p className="text-xs font-black text-slate-800">Línea Doméstica</p>
                   <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
@@ -317,8 +373,16 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                 </button>
               </FeatureGuard>
               <FeatureGuard moduloId="avance_efectivo" flags={flags}>
-                <button onClick={() => setShowAvanceEf(true)}
-                  className="bg-white border border-emerald-200 rounded-2xl p-4 text-left hover:border-emerald-400 hover:shadow-md transition-all active:scale-[0.98]">
+                <button
+                  onClick={() => {
+                    if (enCorteNomina) {
+                      setShowCorteModal(true);
+                      return;
+                    }
+                    setShowAvanceEf(true);
+                  }}
+                  className="bg-white border border-emerald-200 rounded-2xl p-4 text-left hover:border-emerald-400 hover:shadow-md transition-all active:scale-[0.98]"
+                >
                   <span className="text-2xl block mb-2">💵</span>
                   <p className="text-xs font-black text-slate-800">Avance de Efectivo</p>
                   <p className="text-[10px] text-emerald-700 font-bold mt-0.5">
@@ -375,7 +439,13 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                     </div>
                     {isTiendaEnabled && (
                       <button
-                        onClick={() => setShowTienda(prov.id)}
+                        onClick={() => {
+                          if (enCorteNomina) {
+                            setShowCorteModal(true);
+                            return;
+                          }
+                          setShowTienda(prov.id);
+                        }}
                         className="flex-shrink-0 bg-[#002855] text-white text-[10px] font-black px-3.5 py-2 rounded-xl flex items-center gap-1.5 hover:bg-[#073B73] transition shadow-sm"
                       >
                         <ShoppingCart size={12} /> Ver Tienda
@@ -479,8 +549,16 @@ export const WorkerMobileView = memo(function WorkerMobileView({
               </div>
               <div className="divide-y divide-slate-50">
                 <FeatureGuard moduloId="linea_domestica" flags={flags}>
-                  <button onClick={() => setShowLineaDom(true)}
-                    className="w-full flex items-center gap-4 px-4 py-4 hover:bg-purple-50 transition text-left">
+                  <button
+                    onClick={() => {
+                      if (enCorteNomina) {
+                        setShowCorteModal(true);
+                        return;
+                      }
+                      setShowLineaDom(true);
+                    }}
+                    className="w-full flex items-center gap-4 px-4 py-4 hover:bg-purple-50 transition text-left"
+                  >
                     <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center text-xl flex-shrink-0">🏠</div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-black text-slate-800">Línea Doméstica</p>
@@ -490,8 +568,16 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                   </button>
                 </FeatureGuard>
                 <FeatureGuard moduloId="avance_efectivo" flags={flags}>
-                  <button onClick={() => setShowAvanceEf(true)}
-                    className="w-full flex items-center gap-4 px-4 py-4 hover:bg-emerald-50 transition text-left">
+                  <button
+                    onClick={() => {
+                      if (enCorteNomina) {
+                        setShowCorteModal(true);
+                        return;
+                      }
+                      setShowAvanceEf(true);
+                    }}
+                    className="w-full flex items-center gap-4 px-4 py-4 hover:bg-emerald-50 transition text-left"
+                  >
                     <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-xl flex-shrink-0">💵</div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-black text-slate-800">Avance de Efectivo</p>
@@ -725,6 +811,49 @@ export const WorkerMobileView = memo(function WorkerMobileView({
           onSuccess={onRefresh}
           onNotification={onNotification}
         />
+      )}
+
+      {/* Modal elegante de Pausa Temporal por Corte de Nómina */}
+      {showCorteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in" onClick={() => setShowCorteModal(false)}>
+          <div
+            className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-amber-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-red-600 p-6 text-white text-center relative">
+              <button
+                type="button"
+                onClick={() => setShowCorteModal(false)}
+                className="absolute top-4 right-4 text-white/80 hover:text-white p-1"
+              >
+                <X size={18} />
+              </button>
+              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner">
+                <Clock size={32} className="text-white animate-pulse" />
+              </div>
+              <h3 className="text-base font-black tracking-tight">
+                ⏸️ Pausa Temporal por Corte de Nómina
+              </h3>
+            </div>
+            <div className="p-6 space-y-4 text-center">
+              <p className="text-sm font-bold text-slate-800 leading-relaxed">
+                ⏸️ Pausa Temporal por Corte de Nómina: En este momento estamos actualizando los descuentos y saldos del periodo. El servicio se restablecerá automáticamente en un par de horas.
+              </p>
+              {mensajeCorteNomina && (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs font-semibold text-amber-900">
+                  {mensajeCorteNomina}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowCorteModal(false)}
+                className="w-full py-3.5 rounded-2xl bg-[#002855] hover:bg-[#073B73] text-white font-black text-xs uppercase tracking-wider shadow-md transition"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

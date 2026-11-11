@@ -1,6 +1,7 @@
 import { useState, memo, useCallback } from 'react';
 import { X, Package, Plus, Minus, Trash2, ShoppingCart, MapPin, Store, Truck, ChevronRight, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
-import type { ProductoProveedor, CarritoItem, DeliveryMethod, Order } from '../types';
+import type { ProductoProveedor, CarritoItem, DeliveryMethod, Order, FeatureFlag } from '../types';
+import { getOperacionesComprasStatus } from '../types';
 import { supabase } from '../supabaseClient';
 
 interface TiendaOnlineModalProps {
@@ -80,6 +81,23 @@ export const TiendaOnlineModal = memo(function TiendaOnlineModal({
 
     setIsOrdering(true);
     try {
+      // Blindaje en vivo: verificar que operaciones_compras_activas sea TRUE antes de crear pedido
+      try {
+        const { data: liveFlags } = await supabase.from('feature_flags').select('*');
+        if (liveFlags) {
+          const corte = getOperacionesComprasStatus(liveFlags as FeatureFlag[]);
+          if (corte.enCorteNomina) {
+            onNotification(
+              'warning',
+              '⏸️ Pausa Temporal por Corte de Nómina',
+              corte.mensajeBloqueo || 'En este momento estamos actualizando los descuentos y saldos del periodo. El servicio se restablecerá automáticamente en un par de horas.'
+            );
+            setIsOrdering(false);
+            return;
+          }
+        }
+      } catch { /* ignorar error de red */ }
+
       let createdOrderId: string | null = null;
       let createdOrderNum: string | null = null;
       let createdQrToken: string | null = null;
@@ -101,13 +119,22 @@ export const TiendaOnlineModal = memo(function TiendaOnlineModal({
           p_tasa_bcv: bcvRate,
         });
 
-        if (!error && data && data.length > 0 && data[0].ok) {
-          createdOrderId = data[0].order_id;
-          createdOrderNum = data[0].order_number;
-          createdQrToken = data[0].qr_token;
+        if (error) {
+          console.warn('[crear_pedido_online RPC error]:', error.message);
+        } else if (data && data.length > 0) {
+          if (data[0].ok) {
+            createdOrderId = data[0].order_id;
+            createdOrderNum = data[0].order_number;
+            createdQrToken = data[0].qr_token;
+          } else {
+            // Rechazo explícito por reglas de negocio (ej: Cupo insuficiente)
+            onNotification('error', 'Pedido Rechazado', data[0].mensaje || 'No fue posible crear el pedido por restricciones de saldo/cupo.');
+            setIsOrdering(false);
+            return;
+          }
         }
-      } catch (e) {
-        console.warn('[crear_pedido_online RPC fallback triggered]:', e);
+      } catch (e: any) {
+        console.warn('[crear_pedido_online RPC exception]:', e);
       }
 
       // 2. Fallback Híbrido: Si el RPC devolvió ok: false (por ej. producto creado solo en vitrina híbrida), guardamos el pedido en datos_registro

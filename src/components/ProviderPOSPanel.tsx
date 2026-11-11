@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import {
-  QrCode, Camera, Zap, CheckCircle2, AlertCircle, RefreshCw, TrendingUp, AlertTriangle, Check
+  QrCode, Camera, Zap, CheckCircle2, AlertCircle, RefreshCw, TrendingUp, AlertTriangle, Check, Clock
 } from 'lucide-react';
 
 const CREDIT_LEVELS = [
@@ -50,6 +50,8 @@ export interface ProviderPOSPanelProps {
   bcvRate: number;
   activeQR?: any;
   currentUserRole?: string;
+  enCorteNomina?: boolean;
+  mensajeCorteNomina?: string;
   onOpenScanner: () => void;
   onSimulateScan?: () => void;
   onCancel: () => void;
@@ -78,6 +80,8 @@ export function ProviderPOSPanel({
   bcvRate,
   activeQR,
   currentUserRole,
+  enCorteNomina = false,
+  mensajeCorteNomina,
   onOpenScanner,
   onSimulateScan,
   onCancel,
@@ -124,27 +128,56 @@ export function ProviderPOSPanel({
           </p>
         </div>
 
+        {/* Alerta de Pausa Temporal por Corte de Nómina */}
+        {enCorteNomina && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 space-y-1.5 shadow-sm animate-fade-in">
+            <div className="flex items-center gap-2 text-amber-900 font-black text-xs">
+              <Clock size={16} className="text-amber-600 flex-shrink-0 animate-pulse" />
+              <span>⏸️ Corte de Nómina en Curso</span>
+            </div>
+            <p className="text-[11px] text-amber-800 font-semibold leading-relaxed">
+              ⏸️ Corte de Nómina en Curso: Por favor no procese ventas en este momento. El sistema reabrirá la facturación en breve una vez concluya la conciliación administrativa.
+            </p>
+            {mensajeCorteNomina && (
+              <p className="text-[10px] text-amber-700 font-bold bg-white/80 border border-amber-200 rounded-xl px-3 py-1.5 mt-1">
+                {mensajeCorteNomina}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* ── PASO 1: SIN TRABAJADOR ESCANEADO ── */}
         {!scannedWorkerInfo ? (
           <div className="space-y-3 mt-1">
             <div className="border-2 border-dashed border-slate-200 rounded-2xl py-8 flex flex-col items-center justify-center text-slate-400 gap-3 bg-slate-50/50">
               <QrCode size={44} className="stroke-1 animate-pulse text-[#002855]/40" />
               <p className="text-xs font-semibold text-center text-slate-600">
-                Esperando QR del trabajador<br />
-                <span className="text-[10px] text-slate-400">Escanea para verificar su cupo disponible</span>
+                {enCorteNomina ? 'Facturación temporalmente en pausa por Corte de Nómina' : 'Esperando QR del trabajador'}<br />
+                <span className="text-[10px] text-slate-400">
+                  {enCorteNomina ? 'Tus reportes financieros y descargas de Excel siguen 100% activos' : 'Escanea para verificar su cupo disponible'}
+                </span>
               </p>
             </div>
             <button
               onClick={onOpenScanner}
-              className="w-full bg-[#002855] hover:bg-[#073B73] active:scale-[0.98] text-white text-sm font-black py-4 px-4 rounded-2xl shadow-lg transition flex items-center justify-center gap-2.5"
+              disabled={enCorteNomina}
+              className={`w-full text-sm font-black py-4 px-4 rounded-2xl shadow-lg transition flex items-center justify-center gap-2.5 ${
+                enCorteNomina
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-75'
+                  : 'bg-[#002855] hover:bg-[#073B73] active:scale-[0.98] text-white'
+              }`}
             >
-              <Camera size={20} className="text-amber-300 animate-bounce" />
-              Activar Cámara y Escanear QR
+              {enCorteNomina ? (
+                <><Clock size={20} className="text-slate-500" /> Lector QR Deshabilitado (Corte en Curso)</>
+              ) : (
+                <><Camera size={20} className="text-amber-300 animate-bounce" /> Activar Cámara y Escanear QR</>
+              )}
             </button>
             {currentUserRole === 'admin' && activeQR && onSimulateScan && (
               <button
                 onClick={onSimulateScan}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-2.5 px-4 rounded-xl border border-slate-200 transition flex items-center justify-center gap-1.5"
+                disabled={enCorteNomina}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-2.5 px-4 rounded-xl border border-slate-200 transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Zap size={12} /> [Admin] Simular Escaneo del QR Activo
               </button>
@@ -286,11 +319,13 @@ export function ProviderPOSPanel({
               <button
                 type="button"
                 onClick={onCalculateAmount}
-                disabled={isValidating || !posAmount || parseFloat(posAmount) <= 0}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-black py-3.5 px-3 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                disabled={enCorteNomina || isValidating || !posAmount || parseFloat(posAmount) <= 0}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-black py-3.5 px-3 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isValidating ? (
                   <><RefreshCw size={14} className="animate-spin" />Calculando...</>
+                ) : enCorteNomina ? (
+                  <><Clock size={14} />Corte en Curso</>
                 ) : (
                   <><TrendingUp size={14} />Calcular Cuotas</>
                 )}
@@ -434,12 +469,14 @@ export function ProviderPOSPanel({
                     </button>
                     <button
                       type="button"
-                      disabled={isProcessingPurchase || (aplicaInicial && validationResult.monto_inicial_calculado > 0 && !inicialConfirmada)}
+                      disabled={enCorteNomina || isProcessingPurchase || (aplicaInicial && validationResult.monto_inicial_calculado > 0 && !inicialConfirmada)}
                       onClick={onProcessPurchase}
                       className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-emerald-600 hover:to-green-500 active:scale-[0.98] text-white text-xs font-extrabold py-3.5 px-4 rounded-xl shadow-lg transition flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {isProcessingPurchase ? (
                         <><RefreshCw size={14} className="animate-spin" />Registrando...</>
+                      ) : enCorteNomina ? (
+                        <><Clock size={14} />Corte de Nómina en Curso</>
                       ) : (
                         <><Check size={14} />Confirmar y Procesar Venta</>
                       )}

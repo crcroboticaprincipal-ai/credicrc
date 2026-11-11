@@ -9,6 +9,8 @@ import {
   DEFAULT_CONFIGURACION_LIQUIDEZ,
   calcularAvancePorPlazo,
   parseSolicitudMetadata,
+  getOperacionesComprasStatus,
+  type FeatureFlag,
   type ConfiguracionLiquidez,
   type AvanceEfectivoSolicitud,
   type AvanceEfectivoCuota,
@@ -43,6 +45,8 @@ interface ConsolaLiquidezViewProps {
   workers: WorkerBasic[];
   configLiquidez: ConfiguracionLiquidez | null;
   bcvRate: number;
+  enCorteNomina?: boolean;
+  mensajeCorteNomina?: string;
   onSaveConfig: (cfg: ConfiguracionLiquidez) => Promise<void>;
   onRefresh: () => Promise<void>;
   onNotification: (type: 'success' | 'warning' | 'info' | 'error', title: string, message: string) => void;
@@ -59,6 +63,8 @@ export function ConsolaLiquidezView({
   workers,
   configLiquidez,
   bcvRate,
+  enCorteNomina = false,
+  mensajeCorteNomina,
   onSaveConfig,
   onRefresh,
   onNotification,
@@ -198,6 +204,10 @@ export function ConsolaLiquidezView({
 
   // ── Acción: Confirmar Desembolso (Retención Atómica de Capital en el Cupo de $40) ──
   const handleConfirmDisbursement = async (sol: AvanceEfectivoSolicitud) => {
+    if (enCorteNomina) {
+      onNotification('warning', '⏸️ Corte de Nómina en Curso', 'Por favor no procese desembolsos en este momento hasta que concluya la conciliación administrativa.');
+      return;
+    }
     const ref = (referenciasInput[sol.id] || '').trim();
     if (!ref) {
       onNotification('warning', 'Referencia Requerida', 'Ingresa los últimos dígitos o referencia del Pago Móvil enviado al trabajador.');
@@ -210,6 +220,22 @@ export function ConsolaLiquidezView({
 
     setProcessingId(sol.id);
     try {
+      // Blindaje en vivo: verificar que operaciones_compras_activas sea TRUE antes de descontar saldo
+      try {
+        const { data: liveFlags } = await supabase.from('feature_flags').select('*');
+        if (liveFlags) {
+          const corte = getOperacionesComprasStatus(liveFlags as FeatureFlag[]);
+          if (corte.enCorteNomina) {
+            onNotification(
+              'warning',
+              '⏸️ Corte de Nómina en Curso',
+              corte.mensajeBloqueo || 'Por favor no procese desembolsos en este momento. El sistema reabrirá la facturación en breve una vez concluya la conciliación administrativa.'
+            );
+            return;
+          }
+        }
+      } catch { /* ignorar error de red */ }
+
       const fechaPrimeraCuota = getNextPayrollCutoffDate();
 
       // 1. Intentar RPC atómico en PostgreSQL (FOR UPDATE)
@@ -549,6 +575,24 @@ export function ConsolaLiquidezView({
         ══════════════════════════════════════════════════════════════════════ */}
         {activeTab === 'bandeja' && (
           <div className="space-y-5 animate-fade-in">
+            {/* Alerta de Pausa Temporal por Corte de Nómina */}
+            {enCorteNomina && (
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 space-y-1.5 shadow-sm">
+                <div className="flex items-center gap-2 text-amber-900 font-black text-xs">
+                  <Clock size={16} className="text-amber-600 flex-shrink-0 animate-pulse" />
+                  <span>⏸️ Corte de Nómina en Curso</span>
+                </div>
+                <p className="text-xs text-amber-800 font-semibold leading-relaxed">
+                  ⏸️ Corte de Nómina en Curso: Por favor no procese ventas ni desembolsos en este momento. El sistema reabrirá la facturación en breve una vez concluya la conciliación administrativa.
+                </p>
+                {mensajeCorteNomina && (
+                  <p className="text-[11px] text-amber-700 font-bold bg-white/80 border border-amber-200 rounded-xl px-3 py-1.5 mt-1">
+                    {mensajeCorteNomina}
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Sub-filtros por estado */}
             <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap gap-1.5">
@@ -834,11 +878,13 @@ export function ConsolaLiquidezView({
                                   <button
                                     type="button"
                                     onClick={() => handleConfirmDisbursement(sol)}
-                                    disabled={processingId === sol.id}
-                                    className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                    disabled={enCorteNomina || processingId === sol.id}
+                                    className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
                                     {processingId === sol.id ? (
                                       <><RefreshCw size={14} className="animate-spin" /> Procesando...</>
+                                    ) : enCorteNomina ? (
+                                      <><Clock size={14} /> Corte en Curso</>
                                     ) : (
                                       <><CheckCircle2 size={15} /> Confirmar Desembolso</>
                                     )}
