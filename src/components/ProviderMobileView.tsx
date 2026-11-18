@@ -4,6 +4,7 @@ import {
   History, Percent, Building2, Save
 } from 'lucide-react';
 import type { Order, ProductoProveedor, FeatureFlag, Transaction, Installment } from '../types';
+import { isTransactionAnulada, getMotivoAnulacion } from '../types';
 import { FeatureGuard } from './FeatureGuard';
 import { PedidosProviderPanel } from './PedidosProviderPanel';
 
@@ -130,13 +131,14 @@ export const ProviderMobileView = memo(function ProviderMobileView({
     return providerTransactions.filter(t => t.fecha_transaccion && t.fecha_transaccion.startsWith(activeReportMonth));
   }, [providerTransactions, activeReportMonth]);
 
-  // Estadísticas del mes
+  // Estadísticas del mes (excluyendo compras anuladas)
   const monthlyStats = useMemo(() => {
     let bruto = 0;
     let pagado = 0;
     let comision = 0;
 
     monthlyTransactions.forEach(t => {
+      if (isTransactionAnulada(t)) return;
       bruto += t.monto_usd;
       comision += t.comision_monto_usd;
       const txInsts = installments.filter(i => i.transaccion_id === t.id);
@@ -317,33 +319,61 @@ export const ProviderMobileView = memo(function ProviderMobileView({
                   return (
                     <div className="space-y-3">
                       {paginated.map(t => {
+                        const isAnulada = isTransactionAnulada(t);
+                        const motivoAnul = getMotivoAnulacion(t);
                         const isLiquidado = t.estado_liquidacion_proveedor === 'liquidado';
                         return (
-                          <div key={t.id} className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-sm">
-                            <div className="flex justify-between items-start">
+                          <div
+                            key={t.id}
+                            className={`border rounded-2xl p-4 space-y-3 shadow-sm transition ${
+                              isAnulada ? 'bg-slate-100/80 border-red-200 opacity-85' : 'bg-white border-slate-200'
+                            }`}
+                          >
+                            <div className="flex justify-between items-start gap-2">
                               <div>
-                                <p className="text-sm font-black text-slate-800">{t.trabajadores_crc?.nombre || 'Trabajador'}</p>
-                                <p className="text-[10px] text-slate-400 font-semibold">{new Date(t.fecha_transaccion).toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                                <p className={`text-sm font-black ${isAnulada ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                                  {t.trabajadores_crc?.nombre || 'Trabajador'}
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-semibold">
+                                  {new Date(t.fecha_transaccion).toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' })}
+                                </p>
+                                {isAnulada && motivoAnul && (
+                                  <p className="text-[10px] text-red-600 font-bold mt-1">
+                                    Motivo: {motivoAnul}
+                                  </p>
+                                )}
                               </div>
-                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wide ${
-                                isLiquidado ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-blue-50 text-blue-700 border border-blue-200'
-                              }`}>
-                                {isLiquidado ? '✅ Liquidado' : '⏳ Pendiente'}
-                              </span>
+                              {isAnulada ? (
+                                <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wide bg-red-100 text-red-700 border border-red-300 line-through">
+                                  🚫 ANULADA - $0.00 en liquidación
+                                </span>
+                              ) : (
+                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wide ${
+                                  isLiquidado ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                }`}>
+                                  {isLiquidado ? '✅ Liquidado' : '⏳ Pendiente'}
+                                </span>
+                              )}
                             </div>
 
                             <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-xl p-3 text-center border border-slate-100">
                               <div>
                                 <p className="text-[9px] text-slate-400 font-bold uppercase">Monto Venta</p>
-                                <p className="text-xs font-black font-mono text-[#002855]">${t.monto_usd.toFixed(2)}</p>
+                                <p className={`text-xs font-black font-mono ${isAnulada ? 'text-slate-400 line-through' : 'text-[#002855]'}`}>
+                                  ${t.monto_usd.toFixed(2)}
+                                </p>
                               </div>
                               <div>
                                 <p className="text-[9px] text-slate-400 font-bold uppercase">Pago Inicial</p>
-                                <p className="text-xs font-black font-mono text-emerald-600">${t.monto_inicial_pagado_usd.toFixed(2)}</p>
+                                <p className={`text-xs font-black font-mono ${isAnulada ? 'text-slate-400 line-through' : 'text-emerald-600'}`}>
+                                  ${t.monto_inicial_pagado_usd.toFixed(2)}
+                                </p>
                               </div>
                               <div>
                                 <p className="text-[9px] text-slate-400 font-bold uppercase">Financiado</p>
-                                <p className="text-xs font-black font-mono text-blue-600">${(t.monto_usd - t.monto_inicial_pagado_usd).toFixed(2)}</p>
+                                <p className={`text-xs font-black font-mono ${isAnulada ? 'text-red-500 line-through' : 'text-blue-600'}`}>
+                                  {isAnulada ? '$0.00' : `$${(t.monto_usd - t.monto_inicial_pagado_usd).toFixed(2)}`}
+                                </p>
                               </div>
                             </div>
                           </div>
@@ -423,22 +453,40 @@ export const ProviderMobileView = memo(function ProviderMobileView({
                       <h5 className="text-xs font-black text-slate-700 uppercase tracking-wider">Detalles de Compra del Periodo</h5>
                       <div className="space-y-2">
                         {monthlyTransactions.map(t => {
+                          const isAnulada = isTransactionAnulada(t);
                           const txInstallments = installments.filter(inst => inst.transaccion_id === t.id);
                           const isPaid = txInstallments.length > 0 && txInstallments.every(inst => inst.estatus === 'Cobrado' || inst.estatus === 'Pagado Directo');
                           return (
-                            <div key={t.id} className="flex justify-between items-center p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs">
+                            <div
+                              key={t.id}
+                              className={`flex justify-between items-center p-3 border rounded-xl text-xs ${
+                                isAnulada ? 'bg-red-50/40 border-red-200 opacity-80' : 'bg-slate-50 border-slate-100'
+                              }`}
+                            >
                               <div>
-                                <p className="font-bold text-slate-800">{t.trabajadores_crc?.nombre || 'Trabajador'}</p>
+                                <p className={`font-bold ${isAnulada ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                                  {t.trabajadores_crc?.nombre || 'Trabajador'}
+                                </p>
                                 <p className="text-[10px] text-slate-400">{new Date(t.fecha_transaccion).toLocaleDateString('es-VE')}</p>
                               </div>
                               <div className="text-right">
-                                <p className="font-mono font-black text-[#002855]">${t.monto_usd.toFixed(2)} USD</p>
-                                <p className="text-[10px] text-amber-700 font-bold font-mono">Comisión: ${t.comision_monto_usd.toFixed(2)}</p>
-                                <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
-                                  isPaid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                                }`}>
-                                  {isPaid ? 'Cobrado' : 'Pendiente'}
-                                </span>
+                                <p className={`font-mono font-black ${isAnulada ? 'text-slate-400 line-through' : 'text-[#002855]'}`}>
+                                  ${t.monto_usd.toFixed(2)} USD
+                                </p>
+                                <p className={`text-[10px] font-bold font-mono ${isAnulada ? 'text-slate-400 line-through' : 'text-amber-700'}`}>
+                                  Comisión: ${isAnulada ? '0.00' : t.comision_monto_usd.toFixed(2)}
+                                </p>
+                                {isAnulada ? (
+                                  <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-red-100 text-red-700 border border-red-300 line-through">
+                                    ANULADA - $0.00 en liquidación
+                                  </span>
+                                ) : (
+                                  <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
+                                    isPaid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                                  }`}>
+                                    {isPaid ? 'Cobrado' : 'Pendiente'}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           );

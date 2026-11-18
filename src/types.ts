@@ -33,10 +33,13 @@ export interface Transaction {
   dias_financiamiento: number;
   comision_monto_usd: number;
   token_aprobacion: string;
-  estatus: 'Pendiente' | 'Aprobada' | 'Rechazada' | 'Completada';
+  estatus: 'Pendiente' | 'Aprobada' | 'Rechazada' | 'Completada' | 'Anulada' | 'anulada';
   fecha_transaccion: string;
   estado_liquidacion_proveedor?: 'pendiente' | 'liquidado';
   estado_comision_colegio?: 'pendiente' | 'cobrado';
+  motivo_anulacion?: string | null;
+  fecha_anulacion?: string | null;
+  anulado_por?: string | null;
   trabajadores_crc?: { nombre: string; cedula?: string };
   proveedores_aliados?: { nombre: string; categoria?: string };
 }
@@ -46,7 +49,7 @@ export interface Installment {
   transaccion_id: string;
   monto_usd: number;
   fecha_cobro: string;
-  estatus: 'Pendiente' | 'Cobrado' | 'Vencido' | 'En Verificación' | 'Pagado Directo';
+  estatus: 'Pendiente' | 'Cobrado' | 'Vencido' | 'En Verificación' | 'Pagado Directo' | 'Anulada' | 'anulada';
   fecha_pago_real: string | null;
   tasa_bcv_pago: number | null;
   monto_ves_pagado: number | null;
@@ -440,4 +443,60 @@ export function getOperacionesComprasStatus(flags: FeatureFlag[]): {
     mensajeBloqueo: MODO_CORTE_DEFAULT_MSG,
   };
 }
+
+// ─── HELPERS DE ANULACIÓN SEGURA Y REVERSO CONTABLE ──────────────────────────
+export function isTransactionAnulada(tx?: {
+  estatus?: string | null;
+  token_aprobacion?: string | null;
+  motivo_anulacion?: string | null;
+} | null): boolean {
+  if (!tx) return false;
+  const st = (tx.estatus || '').toLowerCase().trim();
+  if (st === 'anulada' || st === 'anulado' || st === 'cancelada') return true;
+  if (typeof tx.token_aprobacion === 'string' && tx.token_aprobacion.startsWith('ANULADA:')) return true;
+  if (tx.motivo_anulacion && st === 'rechazada') return true;
+  return false;
+}
+
+export function isInstallmentAnulada(inst?: {
+  estatus?: string | null;
+  transacciones_credicrc?: {
+    estatus?: string | null;
+    token_aprobacion?: string | null;
+    motivo_anulacion?: string | null;
+  } | null;
+} | null): boolean {
+  if (!inst) return false;
+  const st = (inst.estatus || '').toLowerCase().trim();
+  if (st === 'anulada' || st === 'anulado') return true;
+  if (inst.transacciones_credicrc && isTransactionAnulada(inst.transacciones_credicrc)) return true;
+  return false;
+}
+
+export function getMotivoAnulacion(tx?: {
+  motivo_anulacion?: string | null;
+  token_aprobacion?: string | null;
+} | null): string | null {
+  if (!tx) return null;
+  if (tx.motivo_anulacion && tx.motivo_anulacion.trim()) return tx.motivo_anulacion.trim();
+  if (typeof tx.token_aprobacion === 'string' && tx.token_aprobacion.startsWith('ANULADA:')) {
+    const parts = tx.token_aprobacion.slice('ANULADA:'.length).split('|');
+    return parts[0]?.trim() || 'Compra anulada por administración';
+  }
+  return null;
+}
+
+export function getFechaAnulacion(tx?: {
+  fecha_anulacion?: string | null;
+  token_aprobacion?: string | null;
+} | null): string | null {
+  if (!tx) return null;
+  if (tx.fecha_anulacion) return tx.fecha_anulacion;
+  if (typeof tx.token_aprobacion === 'string' && tx.token_aprobacion.startsWith('ANULADA:')) {
+    const parts = tx.token_aprobacion.slice('ANULADA:'.length).split('|');
+    return parts[1]?.trim() || null;
+  }
+  return null;
+}
+
 

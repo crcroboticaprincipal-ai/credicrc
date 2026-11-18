@@ -9,7 +9,7 @@ import {
   X, Home, Star, Lock, Upload, Eye, Zap,
   Award, ArrowUp, ArrowDown, Clock, AlertTriangle, Camera, CameraOff,
   Building2, Banknote, Phone, MapPin, BadgeCheck, ImagePlus, ToggleLeft,
-  ChevronDown, ChevronUp, FileSpreadsheet
+  ChevronDown, ChevronUp, FileSpreadsheet, RotateCcw, Ban
 } from 'lucide-react';
 import {
   CATEGORIAS_PROVEEDOR,
@@ -18,6 +18,10 @@ import {
   MODO_CORTE_DESC,
   MODO_CORTE_DEFAULT_MSG,
   getOperacionesComprasStatus,
+  isTransactionAnulada,
+  isInstallmentAnulada,
+  getMotivoAnulacion,
+  getFechaAnulacion,
   type CategoriaProveedor,
   type FeatureFlag,
   type ProductoProveedor,
@@ -185,16 +189,19 @@ interface Transaction {
   monto_usd: number; tasa_bcv: number; monto_ves: number;
   monto_inicial_pagado_usd: number; dias_financiamiento: number;
   comision_monto_usd: number; token_aprobacion: string;
-  estatus: 'Pendiente' | 'Aprobada' | 'Rechazada' | 'Completada';
+  estatus: 'Pendiente' | 'Aprobada' | 'Rechazada' | 'Completada' | 'Anulada' | 'anulada';
   fecha_transaccion: string;
   estado_liquidacion_proveedor?: 'pendiente' | 'liquidado';
   estado_comision_colegio?: 'pendiente' | 'cobrado';
+  motivo_anulacion?: string | null;
+  fecha_anulacion?: string | null;
+  anulado_por?: string | null;
   trabajadores_crc?: Worker; proveedores_aliados?: Provider;
 }
 interface Installment {
   id: string; transaccion_id: string; monto_usd: number;
   fecha_cobro: string;
-  estatus: 'Pendiente' | 'Cobrado' | 'Vencido' | 'En Verificación' | 'Pagado Directo';
+  estatus: 'Pendiente' | 'Cobrado' | 'Vencido' | 'En Verificación' | 'Pagado Directo' | 'Anulada' | 'anulada';
   fecha_pago_real: string | null; tasa_bcv_pago: number | null; monto_ves_pagado: number | null;
   created_at: string;
   transacciones_credicrc?: Transaction & { trabajadores_crc?: Worker; proveedores_aliados?: Provider };
@@ -1311,6 +1318,13 @@ export default function App() {
   const [avanceCuotas, setAvanceCuotas] = useState<AvanceEfectivoCuota[]>([]);
   const [configLiquidezMap, setConfigLiquidezMap] = useState<Record<string, ConfiguracionLiquidez>>({});
   const [showDesktopAvanceModal, setShowDesktopAvanceModal] = useState<boolean>(false);
+
+  // ─── ESTADOS MÓDULO DE ANULACIÓN SEGURA Y REVERSO CONTABLE ──────────────────
+  const [anularModalTx, setAnularModalTx] = useState<Transaction | null>(null);
+  const [anularMotivoInput, setAnularMotivoInput] = useState<string>('');
+  const [isAnulandoTx, setIsAnulandoTx] = useState<boolean>(false);
+  const [adminTxSearch, setAdminTxSearch] = useState<string>('');
+  const [adminTxFilter, setAdminTxFilter] = useState<'activas' | 'anuladas' | 'todas'>('todas');
 
   // ─── NOTIFICACIONES ─────────────────────────────────────────────────────────
   const addNotification = useCallback((type: SystemNotification['type'], title: string, message: string) => {
@@ -2977,6 +2991,7 @@ export default function App() {
       const pendingTxs = transactions.filter(t =>
         t.proveedor_id === pId &&
         (t.estatus === 'Aprobada' || t.estatus === 'Completada') &&
+        !isTransactionAnulada(t) &&
         (t.estado_liquidacion_proveedor ?? 'pendiente') === 'pendiente'
       );
       if (pendingTxs.length === 0) {
@@ -3024,6 +3039,7 @@ export default function App() {
       const pendingTxs = transactions.filter(t =>
         t.proveedor_id === pId &&
         (t.estatus === 'Aprobada' || t.estatus === 'Completada') &&
+        !isTransactionAnulada(t) &&
         (t.estado_comision_colegio ?? 'pendiente') === 'pendiente'
       );
       if (pendingTxs.length === 0) {
@@ -3178,9 +3194,134 @@ export default function App() {
     return { capitalLiberado, interesCobrado };
   };
 
+  // ─── ADMIN: ANULAR COMPRA SEGURA Y REVERSO CONTABLE ATÓMICO (SOFT-CANCEL) ────
+  const handleAnularTransaccion = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!anularModalTx || isAnulandoTx) return;
+    const motivoLimpio = anularMotivoInput.trim() || 'Cobro duplicado o monto erróneo en comercio';
+    setIsAnulandoTx(true);
+
+    try {
+      // 1. Intentar función RPC atómica PostgreSQL (FOR UPDATE)
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('anular_transaccion_segura', {
+        p_transaccion_id: anularModalTx.id,
+        p_admin_id: currentUser?.id || null,
+        p_motivo: motivoLimpio,
+      });
+
+      if (!rpcErr && rpcData && rpcData[0]) {
+        const res = rpcData[0];
+        if (!res.ok) {
+          addNotification('error', 'No se pudo anular la compra', res.mensaje);
+          return;
+        }
+        addNotification('success', '🔄 Compra Anulada y Cupo Restituido', res.mensaje);
+        setAnularModalTx(null);
+        setAnularMotivoInput('');
+        await fetchData();
+        return;
+      }
+
+      // 2. Fallback transaccional seguro si la función RPC aún no ha sido corrida en el SQL Editor
+      const { data: freshTx, error: txErr } = await supabase
+        .from('transacciones_credicrc')
+        .select('*')
+        .eq('id', anularModalTx.id)
+        .single();
+      if (txErr || !freshTx) {
+        throw new Error('La transacción indicada no existe.');
+      }
+
+      if (isTransactionAnulada(freshTx)) {
+        addNotification('warning', 'Ya Anulada', 'Esta compra ya fue anulada previamente. No se permiten dobles reversos.');
+        setAnularModalTx(null);
+        await fetchData();
+        return;
+      }
+
+      if ((freshTx.estado_liquidacion_proveedor || '').toLowerCase() === 'liquidado') {
+        addNotification('error', 'Corte Cerrado', 'No se puede anular: esta compra ya fue liquidada al proveedor en un corte anterior cerrado.');
+        return;
+      }
+
+      const { data: freshCuotas } = await supabase
+        .from('cronograma_cuotas')
+        .select('id, estatus')
+        .eq('transaccion_id', anularModalTx.id);
+      if (freshCuotas && freshCuotas.some((c: any) => ['cobrado', 'pagado directo'].includes((c.estatus || '').toLowerCase()))) {
+        addNotification('error', 'Cuota Ya Cobrada', 'No se puede anular: la cuota de esta compra ya fue descontada en un corte de nómina anterior.');
+        return;
+      }
+
+      // Restitución exacta del monto financiado al saldo disponible del trabajador
+      const { data: freshWorker, error: wErr } = await supabase
+        .from('trabajadores_crc')
+        .select('id, nombre, limite_total, limite_disponible')
+        .eq('id', freshTx.trabajador_id)
+        .single();
+      if (wErr || !freshWorker) {
+        throw new Error('No se encontró la ficha del trabajador asociado a la compra.');
+      }
+
+      const montoFinanciado = Math.max(0, Math.round((Number(freshTx.monto_usd || 0) - Number(freshTx.monto_inicial_pagado_usd || 0)) * 100) / 100);
+      const limiteTotal = Number(freshWorker.limite_total || 40);
+      const dispActual = Number(freshWorker.limite_disponible || 0);
+      const nuevoDisponible = Math.min(limiteTotal, Math.round((dispActual + montoFinanciado) * 100) / 100);
+
+      const { error: upWorkerErr } = await supabase
+        .from('trabajadores_crc')
+        .update({ limite_disponible: nuevoDisponible })
+        .eq('id', freshWorker.id);
+      if (upWorkerErr) throw upWorkerErr;
+
+      const nowIso = new Date().toISOString();
+      // Intentar actualizar con columnas nuevas (estatus = 'Anulada')
+      const { error: upTxErr } = await supabase
+        .from('transacciones_credicrc')
+        .update({
+          estatus: 'Anulada',
+          motivo_anulacion: motivoLimpio,
+          fecha_anulacion: nowIso,
+          anulado_por: currentUser?.id || null,
+        })
+        .eq('id', anularModalTx.id);
+
+      if (upTxErr) {
+        // Si el constraint CHECK antiguo aún no permite 'Anulada', guardar con 'Rechazada' y prefijo auditable 'ANULADA:' en token_aprobacion
+        const { error: fallbackTxErr } = await supabase
+          .from('transacciones_credicrc')
+          .update({
+            estatus: 'Rechazada',
+            token_aprobacion: `ANULADA:${motivoLimpio}|${nowIso}`,
+          })
+          .eq('id', anularModalTx.id);
+        if (fallbackTxErr) throw fallbackTxErr;
+      }
+
+      // Intentar marcar cuotas en cronograma_cuotas como 'Anulada'
+      void supabase
+        .from('cronograma_cuotas')
+        .update({ estatus: 'Anulada' })
+        .eq('transaccion_id', anularModalTx.id);
+
+      addNotification(
+        'success',
+        '🔄 Compra Anulada y Cupo Restituido',
+        `Se restituyeron $${montoFinanciado.toFixed(2)} al cupo disponible de ${freshWorker.nombre} (Nuevo disponible: $${nuevoDisponible.toFixed(2)}).`
+      );
+      setAnularModalTx(null);
+      setAnularMotivoInput('');
+      await fetchData();
+    } catch (err: any) {
+      addNotification('error', 'Error al Anular Compra', err.message || 'No se pudo completar el reverso contable.');
+    } finally {
+      setIsAnulandoTx(false);
+    }
+  };
+
   // ─── ADMIN: CONFIRMAR COBRO DE UNA CUOTA INDIVIDUAL ──────────────────────────
   const handleCollectSingleInstallment = async (inst: Installment) => {
-    if (inst.estatus !== 'Pendiente') return;
+    if (inst.estatus !== 'Pendiente' || isInstallmentAnulada(inst)) return;
     setIsProcessingPayroll(true);
     try {
       if (inst.es_avance_efectivo) {
@@ -3216,7 +3357,7 @@ export default function App() {
 
   // ─── ADMIN: PROCESAR NÓMINA MES (COMERCIOS + AVANCES DE EFECTIVO) ────────────
   const handleProcessPayrollDeductions = async () => {
-    const targets = installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === payrollFilterMonth && i.estatus === 'Pendiente');
+    const targets = installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === payrollFilterMonth && i.estatus === 'Pendiente' && !isInstallmentAnulada(i));
     if (targets.length === 0) { addNotification('warning', 'Sin Cuotas', 'No hay cuotas pendientes para este mes.'); return; }
     setIsProcessingPayroll(true);
     try {
@@ -3297,7 +3438,7 @@ export default function App() {
 
   // ─── ADMIN: EXPORTAR CSV MES ─────────────────────────────────────────────────
   const handleExportPayrollCSV = () => {
-    const targets = installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === payrollFilterMonth && i.estatus === 'Pendiente');
+    const targets = installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === payrollFilterMonth && i.estatus === 'Pendiente' && !isInstallmentAnulada(i));
     if (targets.length === 0) { addNotification('warning', 'Sin Datos', 'No hay cuotas pendientes para exportar en este mes.'); return; }
     const headers = ['Trabajador','Cedula','Cargo','Salario Base (USD)','Cuota (USD)','Tasa BCV','A Descontar (VES)','Fecha Cobro','Proveedor'];
     const rows = targets.map(i => {
@@ -3314,9 +3455,9 @@ export default function App() {
   };
 
   // ─── CÁLCULOS ────────────────────────────────────────────────────────────────
-  const totalVolume = transactions.filter(t => t.estatus === 'Aprobada' || t.estatus === 'Completada').reduce((s, t) => s + (t.monto_usd - t.monto_inicial_pagado_usd), 0);
-  const totalCommissions = transactions.filter(t => t.estatus === 'Aprobada' || t.estatus === 'Completada').reduce((s, t) => s + t.comision_monto_usd, 0);
-  const pendingDeductionsCount = installments.filter(i => i.estatus === 'Pendiente').length;
+  const totalVolume = transactions.filter(t => (t.estatus === 'Aprobada' || t.estatus === 'Completada') && !isTransactionAnulada(t)).reduce((s, t) => s + (t.monto_usd - t.monto_inicial_pagado_usd), 0);
+  const totalCommissions = transactions.filter(t => (t.estatus === 'Aprobada' || t.estatus === 'Completada') && !isTransactionAnulada(t)).reduce((s, t) => s + t.comision_monto_usd, 0);
+  const pendingDeductionsCount = installments.filter(i => i.estatus === 'Pendiente' && !isInstallmentAnulada(i)).length;
   const pendingDirectPayments = directPayments.filter(d => d.estatus === 'Pendiente').length;
   const currentWorker = workers.find(w =>
     w.id === activeWorkerId ||
@@ -3378,6 +3519,7 @@ export default function App() {
   });
 
   const monthlyStats = monthlyTransactions.reduce((acc, t) => {
+    if (isTransactionAnulada(t)) return acc;
     const txInstallments = installments.filter(inst => inst.transaccion_id === t.id);
     const isPaid = txInstallments.length > 0 && txInstallments.every(inst => inst.estatus === 'Cobrado' || inst.estatus === 'Pagado Directo');
     
@@ -3394,7 +3536,7 @@ export default function App() {
   }, { bruto: 0, comision: 0, pagado: 0, pendiente: 0, comision_pagada: 0, comision_pendiente: 0 });
   const supplierReconciliation = providers.map(p => {
     const isLiq = isLiquidityProvider(p);
-    const pt = transactions.filter(t => t.proveedor_id === p.id && (t.estatus === 'Aprobada' || t.estatus === 'Completada'));
+    const pt = transactions.filter(t => t.proveedor_id === p.id && (t.estatus === 'Aprobada' || t.estatus === 'Completada') && !isTransactionAnulada(t));
     const totalVendido = pt.reduce((s, t) => s + t.monto_usd, 0);
     const totalComision = isLiq ? 0 : pt.reduce((s, t) => s + t.comision_monto_usd, 0);
     // Bloque A: ventas pendientes de liquidar al proveedor
@@ -3487,7 +3629,7 @@ export default function App() {
   const _now = new Date();
   const _curMonth = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}`;
   const activeMonthFilter = payrollFilterMonth || _curMonth;
-  const monthlyTx = transactions.filter(t => (t.fecha_transaccion || '').slice(0, 7) === activeMonthFilter);
+  const monthlyTx = transactions.filter(t => (t.fecha_transaccion || '').slice(0, 7) === activeMonthFilter && !isTransactionAnulada(t));
   type MonthlySummaryRow = { nombre: string; cedula: string; totalComprado: number; totalInicial: number; totalFinanciado: number; proveedores: string[] };
   const _byWorker: Record<string, { nombre: string; cedula: string; totalComprado: number; totalInicial: number; totalFinanciado: number; proveedores: Set<string> }> = {};
   monthlyTx.forEach(t => {
@@ -3508,6 +3650,141 @@ export default function App() {
       {showSuccessOverlay && <SuccessOverlay onClose={() => setShowSuccessOverlay(false)}/>}
       {showQRScannerModal && <QRScanner onScan={handleQRScanned} onClose={() => setShowQRScannerModal(false)}/>}
       {showTermsModal && <TermsAndPoliciesModal onClose={() => setShowTermsModal(false)}/>}
+
+      {/* ── MODAL DE CONFIRMACIÓN DE ANULACIÓN SEGURA Y REVERSO CONTABLE (SOFT-CANCEL ATÓMICO) ── */}
+      {anularModalTx && (() => {
+        const w = anularModalTx.trabajadores_crc || workers.find(wk => wk.id === anularModalTx.trabajador_id);
+        const p = anularModalTx.proveedores_aliados || providers.find(pr => pr.id === anularModalTx.proveedor_id);
+        const montoFinanciado = Math.max(0, Math.round((Number(anularModalTx.monto_usd || 0) - Number(anularModalTx.monto_inicial_pagado_usd || 0)) * 100) / 100);
+        const dispActual = Number(w?.limite_disponible ?? 0);
+        const topeTotal = Number(w?.limite_total ?? 40);
+        const nuevoDisponibleProyectado = Math.min(topeTotal, Math.round((dispActual + montoFinanciado) * 100) / 100);
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm animate-fade-in"
+            onClick={() => !isAnulandoTx && setAnularModalTx(null)}
+          >
+            <div
+              className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-red-200 text-left"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-r from-[#002855] via-red-800 to-[#E53935] p-6 text-white relative">
+                <button
+                  type="button"
+                  disabled={isAnulandoTx}
+                  onClick={() => setAnularModalTx(null)}
+                  className="absolute top-4 right-4 text-white/80 hover:text-white p-1"
+                >
+                  <X size={18} />
+                </button>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center flex-shrink-0 shadow-inner">
+                    <RotateCcw size={24} className="text-white" />
+                  </div>
+                  <div>
+                    <span className="inline-block text-[10px] font-black uppercase tracking-widest bg-black/25 px-2.5 py-0.5 rounded-full mb-1">
+                      Reverso Contable Auditable · Cero Borrado Físico
+                    </span>
+                    <h3 className="text-base font-black tracking-tight">
+                      Anular Compra y Restituir Cupo al Trabajador
+                    </h3>
+                  </div>
+                </div>
+              </div>
+
+              <form onSubmit={handleAnularTransaccion} className="p-6 space-y-4">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2.5 text-xs">
+                  <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                    <span className="text-slate-500 font-bold">Trabajador:</span>
+                    <span className="font-black text-slate-800">{w?.nombre || 'Trabajador'} ({w?.cedula || '—'})</span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                    <span className="text-slate-500 font-bold">Comercio / Proveedor:</span>
+                    <span className="font-black text-[#002855]">{p?.nombre || 'Comercio'}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                    <span className="text-slate-500 font-bold">Fecha de la Compra:</span>
+                    <span className="font-semibold text-slate-700">
+                      {new Date(anularModalTx.fecha_transaccion).toLocaleString('es-VE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                    <span className="text-slate-500 font-bold">Monto Original de la Compra:</span>
+                    <span className="font-mono font-bold text-slate-800">${Number(anularModalTx.monto_usd).toFixed(2)} USD</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1">
+                    <span className="text-emerald-700 font-black uppercase text-[11px]">Monto a Devolver al Cupo:</span>
+                    <span className="font-mono font-black text-base text-emerald-700">+${montoFinanciado.toFixed(2)} USD</span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex justify-between items-center text-[11px]">
+                    <span className="text-emerald-800 font-bold">Proyección de Saldo Disponible:</span>
+                    <span className="font-mono font-black text-emerald-900">
+                      ${dispActual.toFixed(2)} → ${nuevoDisponibleProyectado.toFixed(2)} (Tope: ${topeTotal.toFixed(2)})
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                    Motivo de la Anulación (Auditoría) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={anularMotivoInput}
+                    onChange={e => setAnularMotivoInput(e.target.value)}
+                    placeholder="Ej: Cobro duplicado o monto erróneo en comercio"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#002855] focus:ring-2 focus:ring-[#002855]/20"
+                  />
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {[
+                      'Cobro duplicado en comercio',
+                      'Monto erróneo ingresado en POS',
+                      'Compra cancelada de mutuo acuerdo',
+                    ].map(sug => (
+                      <button
+                        key={sug}
+                        type="button"
+                        onClick={() => setAnularMotivoInput(sug)}
+                        className="text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 px-2.5 py-1 rounded-lg border border-slate-200 transition"
+                      >
+                        {sug}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800 font-semibold leading-relaxed">
+                  <strong>Efecto contable inmediato:</strong> La venta pasará a estado <span className="underline">ANULADA ($0.00 en liquidación)</span>, se excluirá del próximo corte de nómina y de los totales del proveedor, conservando el registro histórico auditable.
+                </div>
+
+                <div className="flex gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    disabled={isAnulandoTx}
+                    onClick={() => setAnularModalTx(null)}
+                    className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isAnulandoTx || !anularMotivoInput.trim()}
+                    className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-red-600 to-[#E53935] hover:from-red-700 hover:to-red-600 text-white text-xs font-black shadow-lg transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isAnulandoTx ? (
+                      <><RefreshCw size={14} className="animate-spin" /> Reversando Compra...</>
+                    ) : (
+                      <><RotateCcw size={14} /> Confirmar Anulación y Reverso</>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── NAVBAR ── */}
       <header className="bg-white border-b border-slate-200 shadow-sm px-3 md:px-8 py-2 md:py-3.5 flex flex-col md:flex-row items-center justify-between gap-2.5 md:gap-4 md:sticky md:top-0 z-40">
@@ -3940,28 +4217,47 @@ export default function App() {
                               <p className="text-xs text-slate-400 text-center py-8">No tienes cuotas pendientes registradas.</p>
                             ) : (
                               <div className="space-y-3">
-                                {currentWorkerInstallments.map(inst => (
-                                  <div key={inst.id} className={`p-3.5 rounded-xl border flex items-center justify-between text-xs transition ${inst.estatus === 'Cobrado' ? 'bg-slate-50/60 border-slate-100 opacity-60' : inst.estatus === 'En Verificación' ? 'bg-amber-50 border-amber-200' : inst.estatus === 'Pagado Directo' ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
-                                    <div className="space-y-1">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-bold text-slate-800 font-mono">${inst.monto_usd.toFixed(2)}</span>
-                                        <span className="text-slate-400">→</span>
-                                        <span className="text-[#E53935] font-bold font-mono">Bs. {(inst.monto_usd * bcvRate).toFixed(2)}</span>
-                                      </div>
-                                      {inst.es_avance_efectivo && (
-                                        <div className="text-[10px] font-extrabold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md inline-block">
-                                          💵 Avance de Efectivo · Cuota #{inst.numero_cuota}/{inst.num_cuotas_total}
+                                {currentWorkerInstallments.map(inst => {
+                                  const isAnulada = isInstallmentAnulada(inst);
+                                  return (
+                                    <div key={inst.id} className={`p-3.5 rounded-xl border flex items-center justify-between text-xs transition ${
+                                      isAnulada ? 'bg-red-50/30 border-red-200 opacity-75' :
+                                      inst.estatus === 'Cobrado' ? 'bg-slate-50/60 border-slate-100 opacity-60' :
+                                      inst.estatus === 'En Verificación' ? 'bg-amber-50 border-amber-200' :
+                                      inst.estatus === 'Pagado Directo' ? 'bg-emerald-50 border-emerald-200' :
+                                      'bg-white border-slate-200'
+                                    }`}>
+                                      <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className={`font-bold font-mono ${isAnulada ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                            ${inst.monto_usd.toFixed(2)}
+                                          </span>
+                                          <span className="text-slate-400">→</span>
+                                          <span className={`font-bold font-mono ${isAnulada ? 'text-slate-400 line-through' : 'text-[#E53935]'}`}>
+                                            Bs. {(inst.monto_usd * bcvRate).toFixed(2)}
+                                          </span>
                                         </div>
-                                      )}
-                                      <div className="text-[10px] text-slate-500 font-medium">
-                                        Vence: {new Date(inst.fecha_cobro).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                        {inst.es_avance_efectivo && (
+                                          <div className="text-[10px] font-extrabold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md inline-block">
+                                            💵 Avance de Efectivo · Cuota #{inst.numero_cuota}/{inst.num_cuotas_total}
+                                          </div>
+                                        )}
+                                        <div className="text-[10px] text-slate-500 font-medium">
+                                          Vence: {new Date(inst.fecha_cobro).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                        </div>
                                       </div>
+                                      <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-wide border ${
+                                        isAnulada ? 'bg-red-100 text-red-700 border-red-300 line-through' :
+                                        inst.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' :
+                                        inst.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                        inst.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                        'bg-blue-50 text-blue-600 border-blue-200'
+                                      }`}>
+                                        {isAnulada ? 'ANULADA - $0.00' : inst.estatus}
+                                      </span>
                                     </div>
-                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-wide border ${inst.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' : inst.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' : inst.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
-                                      {inst.estatus}
-                                    </span>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -3974,18 +4270,35 @@ export default function App() {
                               <p className="text-xs text-slate-400 text-center py-8">No has realizado compras con CrediCRC.</p>
                             ) : (
                               <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
-                                {currentWorkerTransactions.map(trans => (
-                                  <div key={trans.id} className="p-3.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between hover:border-slate-300 transition">
-                                    <div>
-                                      <strong className="text-slate-800 block">{trans.proveedores_aliados?.nombre || 'Comercio'}</strong>
-                                      <span className="text-[10px] text-slate-500">{new Date(trans.fecha_transaccion).toLocaleDateString('es-VE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                                {currentWorkerTransactions.map(trans => {
+                                  const isAnulada = isTransactionAnulada(trans);
+                                  return (
+                                    <div key={trans.id} className={`p-3.5 rounded-xl border text-xs flex items-center justify-between transition ${
+                                      isAnulada ? 'bg-red-50/30 border-red-200 opacity-80' : 'bg-white border-slate-200 hover:border-slate-300'
+                                    }`}>
+                                      <div>
+                                        <strong className={`block ${isAnulada ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                                          {trans.proveedores_aliados?.nombre || 'Comercio'}
+                                        </strong>
+                                        <span className="text-[10px] text-slate-500">
+                                          {new Date(trans.fecha_transaccion).toLocaleDateString('es-VE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className={`font-bold font-mono ${isAnulada ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                          ${trans.monto_usd.toFixed(2)}
+                                        </div>
+                                        {isAnulada ? (
+                                          <div className="text-[9px] text-red-700 bg-red-100 border border-red-200 px-1.5 py-0.5 rounded font-black line-through">
+                                            ANULADA - $0.00
+                                          </div>
+                                        ) : (
+                                          <div className="text-[9px] text-slate-400 font-bold">Inicial: ${trans.monto_inicial_pagado_usd.toFixed(0)}</div>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div className="text-right">
-                                      <div className="font-bold text-slate-800 font-mono">${trans.monto_usd.toFixed(2)}</div>
-                                      <div className="text-[9px] text-slate-400 font-bold">Inicial: ${trans.monto_inicial_pagado_usd.toFixed(0)}</div>
-                                    </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -4005,7 +4318,7 @@ export default function App() {
                                   <select value={selectedInstallmentId} onChange={e => setSelectedInstallmentId(e.target.value)}
                                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 font-bold cursor-pointer">
                                     <option value="">-- Seleccionar cuota --</option>
-                                    {currentWorkerInstallments.filter(i => i.estatus === 'Pendiente').map(i => (
+                                    {currentWorkerInstallments.filter(i => i.estatus === 'Pendiente' && !isInstallmentAnulada(i)).map(i => (
                                       <option key={i.id} value={i.id}>${i.monto_usd.toFixed(2)} — Vence {new Date(i.fecha_cobro).toLocaleDateString('es-VE')} — {i.transacciones_credicrc?.proveedores_aliados?.nombre || 'Comercio'}</option>
                                     ))}
                                   </select>
@@ -4370,18 +4683,41 @@ export default function App() {
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                           {paginated.map(t => {
+                                            const isAnulada = isTransactionAnulada(t);
+                                            const motivoAnul = getMotivoAnulacion(t);
                                             const isLiquidado = t.estado_liquidacion_proveedor === 'liquidado';
                                             return (
-                                              <tr key={t.id} className="hover:bg-slate-50/50 transition">
-                                                <td className="py-3 px-4 font-bold text-slate-800">{t.trabajadores_crc?.nombre || 'N/A'}</td>
-                                                <td className="py-3 px-4 text-slate-500">{new Date(t.fecha_transaccion).toLocaleDateString('es-VE')}</td>
-                                                <td className="py-3 px-4 text-right font-mono font-bold">${t.monto_usd.toFixed(2)}</td>
-                                                <td className="py-3 px-4 text-right font-mono">${t.monto_inicial_pagado_usd.toFixed(2)}</td>
-                                                <td className="py-3 px-4 text-right font-bold text-green-600 font-mono">${(t.monto_usd - t.monto_inicial_pagado_usd).toFixed(2)}</td>
-                                                <td className="py-3 px-4 text-center">
-                                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${isLiquidado ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
-                                                    {isLiquidado ? '✅ Liquidado' : '⏳ Pendiente'}
+                                              <tr key={t.id} className={`transition ${isAnulada ? 'bg-red-50/40 opacity-80' : 'hover:bg-slate-50/50'}`}>
+                                                <td className="py-3 px-4">
+                                                  <span className={`font-bold ${isAnulada ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                                                    {t.trabajadores_crc?.nombre || 'N/A'}
                                                   </span>
+                                                  {isAnulada && motivoAnul && (
+                                                    <span className="block text-[10px] text-red-600 font-semibold">
+                                                      Motivo: {motivoAnul}
+                                                    </span>
+                                                  )}
+                                                </td>
+                                                <td className="py-3 px-4 text-slate-500">{new Date(t.fecha_transaccion).toLocaleDateString('es-VE')}</td>
+                                                <td className={`py-3 px-4 text-right font-mono font-bold ${isAnulada ? 'text-slate-400 line-through' : ''}`}>
+                                                  ${t.monto_usd.toFixed(2)}
+                                                </td>
+                                                <td className={`py-3 px-4 text-right font-mono ${isAnulada ? 'text-slate-400 line-through' : ''}`}>
+                                                  ${t.monto_inicial_pagado_usd.toFixed(2)}
+                                                </td>
+                                                <td className={`py-3 px-4 text-right font-bold font-mono ${isAnulada ? 'text-red-500 line-through' : 'text-green-600'}`}>
+                                                  {isAnulada ? '$0.00' : `$${(t.monto_usd - t.monto_inicial_pagado_usd).toFixed(2)}`}
+                                                </td>
+                                                <td className="py-3 px-4 text-center">
+                                                  {isAnulada ? (
+                                                    <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 line-through">
+                                                      🚫 ANULADA - $0.00 en liquidación
+                                                    </span>
+                                                  ) : (
+                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${isLiquidado ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
+                                                      {isLiquidado ? '✅ Liquidado' : '⏳ Pendiente'}
+                                                    </span>
+                                                  )}
                                                 </td>
                                               </tr>
                                             );
@@ -4485,18 +4821,31 @@ export default function App() {
                                           </thead>
                                           <tbody className="divide-y divide-slate-100">
                                             {monthlyTransactions.map(t => {
+                                              const isAnulada = isTransactionAnulada(t);
                                               const txInstallments = installments.filter(inst => inst.transaccion_id === t.id);
                                               const isPaid = txInstallments.length > 0 && txInstallments.every(inst => inst.estatus === 'Cobrado' || inst.estatus === 'Pagado Directo');
                                               return (
-                                                <tr key={t.id} className="hover:bg-slate-50/30 transition">
-                                                  <td className="py-2.5 px-3 font-bold text-slate-800">{t.trabajadores_crc?.nombre || 'N/A'}</td>
+                                                <tr key={t.id} className={`transition ${isAnulada ? 'bg-red-50/40 opacity-80' : 'hover:bg-slate-50/30'}`}>
+                                                  <td className={`py-2.5 px-3 font-bold ${isAnulada ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                                                    {t.trabajadores_crc?.nombre || 'N/A'}
+                                                  </td>
                                                   <td className="py-2.5 px-3 text-slate-500">{new Date(t.fecha_transaccion).toLocaleDateString('es-VE')}</td>
-                                                  <td className="py-2.5 px-3 text-right font-mono font-semibold">${t.monto_usd.toFixed(2)}</td>
-                                                  <td className="py-2.5 px-3 text-right font-mono text-amber-700 font-bold">${t.comision_monto_usd.toFixed(2)}</td>
+                                                  <td className={`py-2.5 px-3 text-right font-mono font-semibold ${isAnulada ? 'text-slate-400 line-through' : ''}`}>
+                                                    ${t.monto_usd.toFixed(2)}
+                                                  </td>
+                                                  <td className={`py-2.5 px-3 text-right font-mono font-bold ${isAnulada ? 'text-slate-400 line-through' : 'text-amber-700'}`}>
+                                                    ${isAnulada ? '0.00' : t.comision_monto_usd.toFixed(2)}
+                                                  </td>
                                                   <td className="py-2.5 px-3 text-center">
-                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${isPaid ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                                                      {isPaid ? 'Cobrado' : 'En Lote/Pendiente'}
-                                                    </span>
+                                                    {isAnulada ? (
+                                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 line-through">
+                                                        ANULADA - $0.00 en liquidación
+                                                      </span>
+                                                    ) : (
+                                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${isPaid ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                                                        {isPaid ? 'Cobrado' : 'En Lote/Pendiente'}
+                                                      </span>
+                                                    )}
                                                   </td>
                                                 </tr>
                                               );
@@ -4883,6 +5232,103 @@ export default function App() {
                                 ))}
                               </div>
                             )}
+
+                            {/* Últimas Transacciones en Dashboard con Botón de Anulación Segura */}
+                            <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 shadow-sm">
+                              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                                <div>
+                                  <h5 className="text-xs font-black text-[#002855] uppercase tracking-wider flex items-center gap-1.5">
+                                    <RotateCcw size={14} className="text-[#E53935]" />
+                                    Historial Reciente de Compras (Anulación Segura / Soft-Cancel)
+                                  </h5>
+                                  <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                                    Reversa compras registradas por error en el ciclo activo restituyendo el cupo disponible al trabajador.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setAdminTab('payroll')}
+                                  className="text-[11px] font-black text-[#002855] bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3 py-1.5 rounded-xl transition"
+                                >
+                                  Ver Historial Completo en Nómina →
+                                </button>
+                              </div>
+
+                              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                                <table className="w-full text-xs text-left text-slate-600">
+                                  <thead className="text-[10px] bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                                    <tr>
+                                      <th className="py-2.5 px-3">Fecha</th>
+                                      <th className="py-2.5 px-3">Trabajador</th>
+                                      <th className="py-2.5 px-3">Comercio</th>
+                                      <th className="py-2.5 px-3 text-right">Monto ($)</th>
+                                      <th className="py-2.5 px-3 text-center">Estado</th>
+                                      <th className="py-2.5 px-3 text-center">Acción</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {transactions.slice(0, 10).map(t => {
+                                      const isAnulada = isTransactionAnulada(t);
+                                      const motivoAnul = getMotivoAnulacion(t);
+                                      const isLiquidado = t.estado_liquidacion_proveedor === 'liquidado';
+                                      const txInsts = installments.filter(inst => inst.transaccion_id === t.id && !inst.es_avance_efectivo);
+                                      const isCuotaCobrada = txInsts.some(inst => inst.estatus === 'Cobrado' || inst.estatus === 'Pagado Directo');
+                                      const canAnular = !isAnulada && !isLiquidado && !isCuotaCobrada;
+
+                                      return (
+                                        <tr key={t.id} className={`transition ${isAnulada ? 'bg-red-50/40 opacity-85' : 'hover:bg-slate-50/60'}`}>
+                                          <td className="py-2.5 px-3 text-[11px] text-slate-500 whitespace-nowrap">
+                                            {new Date(t.fecha_transaccion).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                          </td>
+                                          <td className={`py-2.5 px-3 font-bold ${isAnulada ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                                            {t.trabajadores_crc?.nombre || 'Trabajador'}
+                                          </td>
+                                          <td className={`py-2.5 px-3 font-semibold ${isAnulada ? 'text-slate-500 line-through' : 'text-[#002855]'}`}>
+                                            {t.proveedores_aliados?.nombre || 'Comercio'}
+                                          </td>
+                                          <td className={`py-2.5 px-3 text-right font-mono font-bold ${isAnulada ? 'text-red-500 line-through' : 'text-slate-800'}`}>
+                                            ${t.monto_usd.toFixed(2)}
+                                          </td>
+                                          <td className="py-2.5 px-3 text-center">
+                                            {isAnulada ? (
+                                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 line-through" title={motivoAnul || undefined}>
+                                                🚫 ANULADA - $0.00 en liquidación
+                                              </span>
+                                            ) : isLiquidado || isCuotaCobrada ? (
+                                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-green-50 text-green-700 border border-green-200">
+                                                ✅ {isLiquidado ? 'Liquidada' : 'Cobrada'}
+                                              </span>
+                                            ) : (
+                                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-blue-50 text-blue-700 border border-blue-200">
+                                                ⏳ Activa
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="py-2.5 px-3 text-center">
+                                            {canAnular ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setAnularModalTx(t);
+                                                  setAnularMotivoInput('');
+                                                }}
+                                                className="bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-200 text-[10px] font-black px-2.5 py-1 rounded-lg transition inline-flex items-center gap-1"
+                                              >
+                                                <RotateCcw size={11} /> Anular Compra
+                                              </button>
+                                            ) : (
+                                              <span className="text-[10px] text-slate-400 font-semibold">
+                                                {isAnulada ? 'Revertida' : 'Cerrada'}
+                                              </span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
                           </div>
                         )}
 
@@ -4983,8 +5429,8 @@ export default function App() {
                         {adminTab === 'payroll' && (() => {
                           const activeM = payrollFilterMonth || _curMonth;
                           const monthInsts = installments.filter(i => (i.fecha_cobro || '').slice(0, 7) === activeM);
-                          const pendingInsts = monthInsts.filter(i => i.estatus === 'Pendiente');
-                          const paidInsts = monthInsts.filter(i => i.estatus === 'Cobrado' || i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación');
+                          const pendingInsts = monthInsts.filter(i => i.estatus === 'Pendiente' && !isInstallmentAnulada(i));
+                          const paidInsts = monthInsts.filter(i => (i.estatus === 'Cobrado' || i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación') && !isInstallmentAnulada(i));
 
                           // Agrupar por trabajador
                           const workerGroupsMap: Record<string, {
@@ -5012,12 +5458,12 @@ export default function App() {
 
                           const workerGroups = Object.values(workerGroupsMap).map(g => {
                             const filteredInsts = g.insts.filter(i => {
-                              if (payrollStatusFilter === 'pendientes') return i.estatus === 'Pendiente';
-                              if (payrollStatusFilter === 'cobradas') return i.estatus === 'Cobrado' || i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación';
+                              if (payrollStatusFilter === 'pendientes') return i.estatus === 'Pendiente' && !isInstallmentAnulada(i);
+                              if (payrollStatusFilter === 'cobradas') return (i.estatus === 'Cobrado' || i.estatus === 'Pagado Directo' || i.estatus === 'En Verificación') && !isInstallmentAnulada(i);
                               return true;
                             });
-                            const totalComprado = g.insts.reduce((s, i) => s + i.monto_usd, 0);
-                            const totalPending = g.insts.filter(i => i.estatus === 'Pendiente').reduce((s, i) => s + i.monto_usd, 0);
+                            const totalComprado = g.insts.filter(i => !isInstallmentAnulada(i)).reduce((s, i) => s + i.monto_usd, 0);
+                            const totalPending = g.insts.filter(i => i.estatus === 'Pendiente' && !isInstallmentAnulada(i)).reduce((s, i) => s + i.monto_usd, 0);
 
                             return {
                               ...g,
@@ -5168,15 +5614,22 @@ export default function App() {
                                                 <tbody className="divide-y divide-slate-100">
                                                   {g.filteredInsts.map(i => {
                                                     const p = i.transacciones_credicrc?.proveedores_aliados;
+                                                    const isAnulada = isInstallmentAnulada(i);
+                                                    const motivoAnul = getMotivoAnulacion(i.transacciones_credicrc);
+                                                    const canAnular = !i.es_avance_efectivo &&
+                                                      !isAnulada &&
+                                                      i.estatus === 'Pendiente' &&
+                                                      i.transacciones_credicrc &&
+                                                      i.transacciones_credicrc.estado_liquidacion_proveedor !== 'liquidado';
                                                     const txDate = i.transacciones_credicrc?.fecha_transaccion
                                                       ? new Date(i.transacciones_credicrc.fecha_transaccion).toLocaleDateString('es-VE', { day:'2-digit', month:'2-digit', year:'2-digit' })
                                                       : '—';
                                                     return (
-                                                      <tr key={i.id} className={`hover:bg-slate-50 transition ${i.es_avance_efectivo ? 'bg-amber-50/25' : ''}`}>
+                                                      <tr key={i.id} className={`transition ${isAnulada ? 'bg-red-50/40 opacity-80' : i.es_avance_efectivo ? 'bg-amber-50/25 hover:bg-slate-50' : 'hover:bg-slate-50'}`}>
                                                         <td className="py-3 px-4 font-bold text-slate-800">
                                                           <div className="flex items-center gap-1.5">
                                                             {i.es_avance_efectivo && <span className="text-amber-600">💵</span>}
-                                                            <span>{p?.nombre ?? '—'}</span>
+                                                            <span className={isAnulada ? 'text-slate-500 line-through' : ''}>{p?.nombre ?? '—'}</span>
                                                           </div>
                                                         </td>
                                                         <td className="py-3 px-4 text-slate-500 text-[10px]">
@@ -5190,22 +5643,39 @@ export default function App() {
                                                               </span>
                                                             </div>
                                                           ) : (
-                                                            <>Compra {txDate} · <span className="font-semibold text-slate-700">{p?.categoria ?? '—'}</span></>
+                                                            <div>
+                                                              <span>Compra {txDate} · <span className="font-semibold text-slate-700">{p?.categoria ?? '—'}</span></span>
+                                                              {isAnulada && motivoAnul && (
+                                                                <span className="block text-[10px] text-red-600 font-bold mt-0.5">
+                                                                  Motivo anulación: {motivoAnul}
+                                                                </span>
+                                                              )}
+                                                            </div>
                                                           )}
                                                         </td>
-                                                        <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">${i.monto_usd.toFixed(2)}</td>
-                                                        <td className="py-3 px-4 text-right font-black text-[#E53935] font-mono">Bs. {(i.monto_usd * bcvRate).toFixed(2)}</td>
+                                                        <td className={`py-3 px-4 text-right font-mono font-bold ${isAnulada ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                                          ${i.monto_usd.toFixed(2)}
+                                                        </td>
+                                                        <td className={`py-3 px-4 text-right font-black font-mono ${isAnulada ? 'text-slate-400 line-through' : 'text-[#E53935]'}`}>
+                                                          {isAnulada ? 'Bs. 0.00' : `Bs. ${(i.monto_usd * bcvRate).toFixed(2)}`}
+                                                        </td>
                                                         <td className="py-3 px-4 text-center">
-                                                          <div className="flex items-center justify-center gap-2">
-                                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold border ${
-                                                              i.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' :
-                                                              i.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                                              i.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                                              'bg-blue-50 text-blue-600 border-blue-200'
-                                                            }`}>
-                                                              {i.estatus}
-                                                            </span>
-                                                            {i.estatus === 'Pendiente' && (
+                                                          <div className="flex flex-wrap items-center justify-center gap-1.5">
+                                                            {isAnulada ? (
+                                                              <span className="px-2.5 py-1 rounded-full text-[9px] font-extrabold border bg-red-100 text-red-700 border-red-300 line-through">
+                                                                🚫 ANULADA - $0.00 en liquidación
+                                                              </span>
+                                                            ) : (
+                                                              <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold border ${
+                                                                i.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' :
+                                                                i.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                                i.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                                'bg-blue-50 text-blue-600 border-blue-200'
+                                                              }`}>
+                                                                {i.estatus}
+                                                              </span>
+                                                            )}
+                                                            {i.estatus === 'Pendiente' && !isAnulada && (
                                                               <button
                                                                 type="button"
                                                                 disabled={isProcessingPayroll}
@@ -5217,6 +5687,22 @@ export default function App() {
                                                                 className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow-sm transition flex items-center gap-1"
                                                               >
                                                                 <Check size={11}/> Cobrar
+                                                              </button>
+                                                            )}
+                                                            {canAnular && currentUser?.rol === 'admin' && (
+                                                              <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                  e.stopPropagation();
+                                                                  if (i.transacciones_credicrc) {
+                                                                    setAnularModalTx(i.transacciones_credicrc);
+                                                                    setAnularMotivoInput('');
+                                                                  }
+                                                                }}
+                                                                title="Anular compra y restituir cupo al trabajador"
+                                                                className="bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-200 text-[10px] font-black px-2.5 py-1 rounded-lg transition flex items-center gap-1"
+                                                              >
+                                                                <RotateCcw size={11}/> Anular Compra
                                                               </button>
                                                             )}
                                                           </div>
@@ -5290,6 +5776,174 @@ export default function App() {
                                 </table>
                               </div>
                             )}
+                          </div>
+
+                          {/* ── HISTORIAL GLOBAL DE TRANSACCIONES Y ANULACIÓN SEGURA (SOFT-CANCEL) ── */}
+                          <div className="mt-8 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                              <div>
+                                <h4 className="text-xs font-black text-[#002855] uppercase tracking-widest flex items-center gap-2">
+                                  <RotateCcw size={15} className="text-[#E53935]" />
+                                  Historial Global de Transacciones y Reverso Contable (Soft-Cancel)
+                                </h4>
+                                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                                  Anula compras registradas por error en el ciclo activo. El sistema restituye el cupo al trabajador y marca la operación en $0.00 sin borrar el registro.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="relative">
+                                  <input
+                                    type="text"
+                                    value={adminTxSearch}
+                                    onChange={e => setAdminTxSearch(e.target.value)}
+                                    placeholder="Buscar trabajador o comercio..."
+                                    className="bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#002855] w-56"
+                                  />
+                                  <Search size={13} className="text-slate-400 absolute left-2.5 top-2.5" />
+                                </div>
+                                <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-[10px] font-black">
+                                  {([
+                                    { id: 'todas', label: `Todas (${transactions.length})` },
+                                    { id: 'activas', label: `Activas (${transactions.filter(t => !isTransactionAnulada(t)).length})` },
+                                    { id: 'anuladas', label: `Anuladas (${transactions.filter(t => isTransactionAnulada(t)).length})` },
+                                  ] as const).map(f => (
+                                    <button
+                                      key={f.id}
+                                      type="button"
+                                      onClick={() => setAdminTxFilter(f.id)}
+                                      className={`px-3 py-1.5 rounded-lg transition ${
+                                        adminTxFilter === f.id ? 'bg-[#002855] text-white shadow-sm' : 'text-slate-600 hover:text-[#002855]'
+                                      }`}
+                                    >
+                                      {f.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {(() => {
+                              const q = adminTxSearch.trim().toLowerCase();
+                              const filteredGlobalTxs = transactions.filter(t => {
+                                const anulada = isTransactionAnulada(t);
+                                if (adminTxFilter === 'activas' && anulada) return false;
+                                if (adminTxFilter === 'anuladas' && !anulada) return false;
+                                if (!q) return true;
+                                const wName = (t.trabajadores_crc?.nombre || '').toLowerCase();
+                                const wCed = (t.trabajadores_crc?.cedula || '').toLowerCase();
+                                const pName = (t.proveedores_aliados?.nombre || '').toLowerCase();
+                                return wName.includes(q) || wCed.includes(q) || pName.includes(q);
+                              }).slice(0, 40);
+
+                              if (filteredGlobalTxs.length === 0) {
+                                return (
+                                  <div className="border-2 border-dashed border-slate-200 rounded-xl py-8 text-center text-slate-400 text-xs font-semibold">
+                                    No se encontraron transacciones para el filtro seleccionado.
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                                  <table className="w-full text-xs text-left text-slate-600">
+                                    <thead className="text-[10px] bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                                      <tr>
+                                        <th className="py-3 px-4">Fecha / Hora</th>
+                                        <th className="py-3 px-4">Trabajador</th>
+                                        <th className="py-3 px-4">Comercio</th>
+                                        <th className="py-3 px-4 text-right">Monto Venta ($)</th>
+                                        <th className="py-3 px-4 text-right">Financiado ($)</th>
+                                        <th className="py-3 px-4 text-center">Estado / Liquidación</th>
+                                        <th className="py-3 px-4 text-center">Acción Administrativa</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {filteredGlobalTxs.map(t => {
+                                        const isAnulada = isTransactionAnulada(t);
+                                        const motivoAnul = getMotivoAnulacion(t);
+                                        const fechaAnul = getFechaAnulacion(t);
+                                        const isLiquidado = t.estado_liquidacion_proveedor === 'liquidado';
+                                        const txInsts = installments.filter(inst => inst.transaccion_id === t.id && !inst.es_avance_efectivo);
+                                        const isCuotaCobrada = txInsts.some(inst => inst.estatus === 'Cobrado' || inst.estatus === 'Pagado Directo');
+                                        const canAnular = !isAnulada && !isLiquidado && !isCuotaCobrada;
+
+                                        return (
+                                          <tr key={t.id} className={`transition ${isAnulada ? 'bg-red-50/40 opacity-85' : 'hover:bg-slate-50/60'}`}>
+                                            <td className="py-3 px-4 whitespace-nowrap text-[11px] text-slate-500 font-semibold">
+                                              {new Date(t.fecha_transaccion).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                            </td>
+                                            <td className="py-3 px-4">
+                                              <span className={`font-bold block ${isAnulada ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                                                {t.trabajadores_crc?.nombre || 'Trabajador'}
+                                              </span>
+                                              <span className="text-[10px] font-mono text-slate-400">
+                                                {t.trabajadores_crc?.cedula || '—'}
+                                              </span>
+                                            </td>
+                                            <td className="py-3 px-4 font-bold text-[#002855]">
+                                              <span className={isAnulada ? 'text-slate-500 line-through' : ''}>
+                                                {t.proveedores_aliados?.nombre || 'Comercio'}
+                                              </span>
+                                            </td>
+                                            <td className={`py-3 px-4 text-right font-mono font-bold ${isAnulada ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                              ${t.monto_usd.toFixed(2)}
+                                            </td>
+                                            <td className={`py-3 px-4 text-right font-mono font-black ${isAnulada ? 'text-red-500 line-through' : 'text-emerald-700'}`}>
+                                              {isAnulada ? '$0.00' : `$${(t.monto_usd - t.monto_inicial_pagado_usd).toFixed(2)}`}
+                                            </td>
+                                            <td className="py-3 px-4 text-center">
+                                              {isAnulada ? (
+                                                <div className="space-y-0.5">
+                                                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-red-100 text-red-700 border border-red-300 line-through">
+                                                    🚫 ANULADA - $0.00 en liquidación
+                                                  </span>
+                                                  {motivoAnul && (
+                                                    <p className="text-[10px] text-red-700 font-bold">
+                                                      {motivoAnul}
+                                                      {fechaAnul ? ` (${new Date(fechaAnul).toLocaleDateString('es-VE')})` : ''}
+                                                    </p>
+                                                  )}
+                                                </div>
+                                              ) : isLiquidado || isCuotaCobrada ? (
+                                                <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-green-50 text-green-700 border border-green-200">
+                                                  ✅ {isLiquidado ? 'Liquidada' : 'Cobrada en Nómina'}
+                                                </span>
+                                              ) : (
+                                                <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-blue-50 text-blue-700 border border-blue-200">
+                                                  ⏳ Activa / Pendiente
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="py-3 px-4 text-center">
+                                              {isAnulada ? (
+                                                <span className="text-[10px] font-bold text-slate-400 inline-flex items-center gap-1">
+                                                  <Ban size={12} /> Revertida
+                                                </span>
+                                              ) : canAnular && currentUser?.rol === 'admin' ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setAnularModalTx(t);
+                                                    setAnularMotivoInput('');
+                                                  }}
+                                                  className="bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-200 text-[10px] font-black px-3 py-1.5 rounded-xl shadow-sm transition inline-flex items-center gap-1.5"
+                                                >
+                                                  <RotateCcw size={12} /> Anular Compra
+                                                </button>
+                                              ) : (
+                                                <span className="text-[10px] text-slate-400 font-semibold" title="Solo se pueden anular compras del ciclo activo no liquidadas">
+                                                  Corte Cerrado
+                                                </span>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              );
+                            })()}
                           </div>
                           </>
                           );

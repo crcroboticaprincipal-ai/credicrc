@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { FeatureFlag, ProductoProveedor, Order, ConfiguracionLiquidez, AvanceEfectivoSolicitud } from '../types';
-import { ORDER_STATUS_CONFIG, isLiquidityProvider, getOperacionesComprasStatus } from '../types';
+import { ORDER_STATUS_CONFIG, isLiquidityProvider, getOperacionesComprasStatus, isTransactionAnulada, isInstallmentAnulada } from '../types';
 import { FeatureGuard } from './FeatureGuard';
 import { TiendaOnlineModal } from './TiendaOnlineModal';
 import { LineaDomesticaModal } from './LineaDomesticaModal';
@@ -22,10 +22,11 @@ interface WorkerMini {
 }
 interface InstallmentMini {
   id: string; monto_usd: number; fecha_cobro: string;
-  estatus: string; transacciones_credicrc?: { proveedores_aliados?: { nombre: string } };
+  estatus: string; transacciones_credicrc?: { estatus?: string; token_aprobacion?: string; motivo_anulacion?: string | null; proveedores_aliados?: { nombre: string } };
 }
 interface TransactionMini {
   id: string; monto_usd: number; fecha_transaccion: string;
+  estatus?: string; token_aprobacion?: string; motivo_anulacion?: string | null;
   proveedores_aliados?: { nombre: string };
 }
 interface ProviderMini { id: string; nombre: string; categoria: string; logo_url?: string | null; tipo_proveedor?: string | null; }
@@ -121,7 +122,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
   const [dpTelefono, setDpTelefono] = useState('');
   const [dpFile, setDpFile] = useState<File | null>(null);
 
-  const pendingInstallments = installments.filter(i => i.estatus === 'Pendiente');
+  const pendingInstallments = installments.filter(i => i.estatus === 'Pendiente' && !isInstallmentAnulada(i));
   const lvl = CREDIT_LEVELS.find(l => l.nivel === worker.nivel_credito) || CREDIT_LEVELS[0];
   const activeOrdersTotal = orders
     .filter(o => o.trabajador_id === worker.id && ['pending', 'accepted', 'preparing', 'ready', 'in_transit'].includes(o.status))
@@ -477,25 +478,31 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                 <p className="text-center text-slate-400 text-xs py-6">Sin cuotas pendientes ✅</p>
               ) : (
                 <div className="divide-y divide-slate-50">
-                  {installments.map(inst => (
-                    <div key={inst.id} className="flex items-center justify-between px-4 py-3">
-                      <div>
-                        <p className="text-sm font-bold text-slate-800 font-mono">${inst.monto_usd.toFixed(2)}</p>
-                        <p className="text-[10px] text-slate-500 font-semibold">
-                          {inst.transacciones_credicrc?.proveedores_aliados?.nombre} ·{' '}
-                          {new Date(inst.fecha_cobro).toLocaleDateString('es-VE', { day: 'numeric', month: 'short' })}
-                        </p>
+                  {installments.map(inst => {
+                    const isAnulada = isInstallmentAnulada(inst);
+                    return (
+                      <div key={inst.id} className={`flex items-center justify-between px-4 py-3 ${isAnulada ? 'bg-slate-50/80 opacity-75' : ''}`}>
+                        <div>
+                          <p className={`text-sm font-bold font-mono ${isAnulada ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                            ${inst.monto_usd.toFixed(2)}
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-semibold">
+                            {inst.transacciones_credicrc?.proveedores_aliados?.nombre} ·{' '}
+                            {new Date(inst.fecha_cobro).toLocaleDateString('es-VE', { day: 'numeric', month: 'short' })}
+                          </p>
+                        </div>
+                        <span className={`text-[9px] font-black px-2 py-1 rounded-full border ${
+                          isAnulada ? 'bg-red-50 text-red-700 border-red-200 line-through' :
+                          inst.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' :
+                          inst.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                          inst.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          'bg-blue-50 text-blue-600 border-blue-200'
+                        }`}>
+                          {isAnulada ? 'ANULADA - $0.00' : inst.estatus}
+                        </span>
                       </div>
-                      <span className={`text-[9px] font-black px-2 py-1 rounded-full border ${
-                        inst.estatus === 'Cobrado' ? 'bg-green-50 text-green-600 border-green-200' :
-                        inst.estatus === 'En Verificación' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                        inst.estatus === 'Pagado Directo' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        'bg-blue-50 text-blue-600 border-blue-200'
-                      }`}>
-                        {inst.estatus}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -510,17 +517,31 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                 <p className="text-center text-slate-400 text-xs py-6">Sin compras registradas</p>
               ) : (
                 <div className="divide-y divide-slate-50">
-                  {transactions.slice(0, 10).map(tx => (
-                    <div key={tx.id} className="flex items-center justify-between px-4 py-3">
-                      <div>
-                        <p className="text-sm font-bold text-slate-800">{tx.proveedores_aliados?.nombre || 'Comercio'}</p>
-                        <p className="text-[10px] text-slate-500 font-semibold">
-                          {new Date(tx.fecha_transaccion).toLocaleDateString('es-VE', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </p>
+                  {transactions.slice(0, 10).map(tx => {
+                    const isAnulada = isTransactionAnulada(tx);
+                    return (
+                      <div key={tx.id} className={`flex items-center justify-between px-4 py-3 ${isAnulada ? 'bg-red-50/30 opacity-80' : ''}`}>
+                        <div>
+                          <p className={`text-sm font-bold ${isAnulada ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                            {tx.proveedores_aliados?.nombre || 'Comercio'}
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-semibold">
+                            {new Date(tx.fecha_transaccion).toLocaleDateString('es-VE', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-sm font-black font-mono ${isAnulada ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                            ${tx.monto_usd.toFixed(2)}
+                          </p>
+                          {isAnulada && (
+                            <span className="inline-block text-[9px] font-black text-red-700 bg-red-100 border border-red-200 px-1.5 py-0.5 rounded line-through">
+                              ANULADA - $0.00
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-sm font-black text-slate-800 font-mono">${tx.monto_usd.toFixed(2)}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

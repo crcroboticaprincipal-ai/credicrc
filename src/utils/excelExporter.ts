@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import type { Transaction, Installment } from '../types';
+import { isTransactionAnulada, isInstallmentAnulada, getMotivoAnulacion } from '../types';
 
 export interface ProviderData {
   id: string;
@@ -70,9 +71,13 @@ export async function exportSupplierReportExcel(
   const comisionPct = parseFloat(provider.comision_colegio as string || '0.03');
   const comisionRate = comisionPct > 1 ? comisionPct / 100 : comisionPct;
 
-  // Totales
+  // Totales (excluyendo compras anuladas)
   const approvedTx = providerTransactions.filter(
-    t => t.estatus === 'Aprobada' || t.estatus === 'Completada'
+    t => (t.estatus === 'Aprobada' || t.estatus === 'Completada') && !isTransactionAnulada(t)
+  );
+  // Lista completa auditable para la hoja de Ventas Detalladas (incluye anuladas marcadas en $0.00)
+  const auditableTx = providerTransactions.filter(
+    t => t.estatus === 'Aprobada' || t.estatus === 'Completada' || isTransactionAnulada(t)
   );
 
   const totalBrutoUSD = approvedTx.reduce((s, t) => s + t.monto_usd, 0);
@@ -215,30 +220,36 @@ export async function exportSupplierReportExcel(
   headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_HEADER_BG } };
   headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
 
-  // Filas de Datos
-  approvedTx.forEach((tx, idx) => {
+  // Filas de Datos (incluye ventas activas y anuladas auditables con $0.00 en liquidación)
+  auditableTx.forEach((tx, idx) => {
     const rowNum = 4 + idx;
     const r = wsVentas.getRow(rowNum);
+    const isAnulada = isTransactionAnulada(tx);
+    const motivoAnul = getMotivoAnulacion(tx);
     const dateFormatted = new Date(tx.fecha_transaccion).toLocaleString('es-VE', {
       day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
     });
 
-    const trabajadorNombre = tx.trabajadores_crc?.nombre || 'Cliente Contado';
+    const trabajadorNombre = isAnulada
+      ? `${tx.trabajadores_crc?.nombre || 'Cliente'} [ANULADA - Orig: $${tx.monto_usd.toFixed(2)}]`
+      : (tx.trabajadores_crc?.nombre || 'Cliente Contado');
     const trabajadorCedula = tx.trabajadores_crc?.cedula || '—';
-    const inicialUSD = tx.monto_inicial_pagado_usd || 0;
-    const financiadoUSD = tx.monto_usd - inicialUSD;
+    const inicialUSD = isAnulada ? 0 : (tx.monto_inicial_pagado_usd || 0);
+    const financiadoUSD = isAnulada ? 0 : (tx.monto_usd - (tx.monto_inicial_pagado_usd || 0));
     const tasa = tx.tasa_bcv || bcvRate;
-    const totalVES = tx.monto_ves || (tx.monto_usd * tasa);
-    const comisionUSD = tx.comision_monto_usd || (tx.monto_usd * comisionRate);
-    const netoUSD = tx.monto_usd - comisionUSD;
-    const estadoLiq = tx.estado_liquidacion_proveedor === 'liquidado' ? 'Liquidado' : 'Pendiente';
+    const totalVES = isAnulada ? 0 : (tx.monto_ves || (tx.monto_usd * tasa));
+    const comisionUSD = isAnulada ? 0 : (tx.comision_monto_usd || (tx.monto_usd * comisionRate));
+    const netoUSD = isAnulada ? 0 : (tx.monto_usd - comisionUSD);
+    const estadoLiq = isAnulada
+      ? `ANULADA - $0.00 en liquidación${motivoAnul ? ` (${motivoAnul})` : ''}`
+      : tx.estado_liquidacion_proveedor === 'liquidado' ? 'Liquidado' : 'Pendiente';
 
     r.values = [
       idx + 1,
       dateFormatted,
       trabajadorNombre,
       trabajadorCedula,
-      tx.monto_usd,
+      isAnulada ? 0 : tx.monto_usd,
       inicialUSD,
       financiadoUSD,
       tasa,
@@ -248,8 +259,14 @@ export async function exportSupplierReportExcel(
       estadoLiq,
     ];
 
-    r.font = { size: 9 };
+    r.font = isAnulada
+      ? { size: 9, strike: true, color: { argb: 'FF991B1B' } }
+      : { size: 9 };
     r.alignment = { vertical: 'middle' };
+
+    if (isAnulada) {
+      r.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+    }
 
     // Alineaciones y Formatos
     r.getCell(1).alignment = { horizontal: 'center' };
@@ -272,7 +289,7 @@ export async function exportSupplierReportExcel(
   });
 
   // Fila de Totales con Fórmulas
-  const totalRowNum = 4 + approvedTx.length;
+  const totalRowNum = 4 + auditableTx.length;
   const totRow = wsVentas.getRow(totalRowNum);
   const lastRow = totalRowNum - 1;
 
@@ -423,22 +440,26 @@ export async function exportPayrollReportExcel(
   workbook.creator = 'CrediCRC Sistema de Créditos';
   workbook.created = new Date();
 
-  // Filtrar cuotas del mes
-  const targets = installments.filter(
-    i => (i.fecha_cobro || '').slice(0, 7) === monthFilter
-  );
+  // Map de transacciones para acceder a iniciales
+  const txMap: Record<string, Transaction> = {};
+  transactions.forEach(t => {
+    txMap[t.id] = t;
+  });
+
+  // Filtrar cuotas del mes (excluyendo compras y cuotas anuladas)
+  const targets = installments.filter(i => {
+    if ((i.fecha_cobro || '').slice(0, 7) !== monthFilter) return false;
+    if (isInstallmentAnulada(i)) return false;
+    const parentTx = i.transaccion_id ? txMap[i.transaccion_id] : (i as any).transacciones_credicrc;
+    if (parentTx && isTransactionAnulada(parentTx)) return false;
+    return true;
+  });
 
   // Formatear Mes
   const [yr, mo] = monthFilter.split('-');
   const mDate = new Date(parseInt(yr), parseInt(mo) - 1, 1);
   const monthLabel = mDate.toLocaleString('es-VE', { month: 'long', year: 'numeric' });
   const formattedMonthTitle = monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
-
-  // Map de transacciones para acceder a iniciales
-  const txMap: Record<string, Transaction> = {};
-  transactions.forEach(t => {
-    txMap[t.id] = t;
-  });
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PESTAÑA 1: RESUMEN DE NÓMINA POR EMPLEADO
