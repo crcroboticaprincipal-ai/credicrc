@@ -1,12 +1,19 @@
-import { useState, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import {
   Home, Store, List, Menu, QrCode, Upload,
   History, Calendar, RefreshCw, ShoppingCart, LogOut, X,
   Lock, Eye, Clock, AlertTriangle, ChevronRight, ShieldCheck,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import type { FeatureFlag, ProductoProveedor, Order, ConfiguracionLiquidez, AvanceEfectivoSolicitud } from '../types';
-import { ORDER_STATUS_CONFIG, isLiquidityProvider, getOperacionesComprasStatus, isTransactionAnulada, isInstallmentAnulada } from '../types';
+import type { FeatureFlag, ProductoProveedor, Order, ConfiguracionLiquidez, AvanceEfectivoSolicitud, EstadoComercio } from '../types';
+import {
+  ORDER_STATUS_CONFIG,
+  isLiquidityProvider,
+  getOperacionesComprasStatus,
+  isTransactionAnulada,
+  isInstallmentAnulada,
+  isProviderActivo,
+} from '../types';
 import { FeatureGuard } from './FeatureGuard';
 import { TiendaOnlineModal } from './TiendaOnlineModal';
 import { LineaDomesticaModal } from './LineaDomesticaModal';
@@ -29,7 +36,15 @@ interface TransactionMini {
   estatus?: string; token_aprobacion?: string; motivo_anulacion?: string | null;
   proveedores_aliados?: { nombre: string };
 }
-interface ProviderMini { id: string; nombre: string; categoria: string; logo_url?: string | null; tipo_proveedor?: string | null; }
+interface ProviderMini {
+  id: string;
+  nombre: string;
+  categoria: string;
+  logo_url?: string | null;
+  tipo_proveedor?: string | null;
+  estado_comercio?: EstadoComercio | string | null;
+  motivo_suspension?: string | null;
+}
 interface ActiveQRMini {
   qrId: string; workerName: string; workerCedula: string;
   tokenHash: string; payloadJson: string; nivel: number;
@@ -131,8 +146,15 @@ export const WorkerMobileView = memo(function WorkerMobileView({
   const limiteDisponibleEfectivo = Math.max(0, (worker.limite_disponible ?? 0) - activeOrdersTotal);
   const pct = worker.limite_total > 0 ? (limiteDisponibleEfectivo / worker.limite_total) * 100 : 0;
 
-  const proveedorActivo = providers.find(p => p.id === showTienda);
+  const activeProviders = providers.filter(p => isProviderActivo(p));
+  const proveedorActivo = activeProviders.find(p => p.id === showTienda);
   const productosProveedor = showTienda ? productos.filter(p => p.proveedor_id === showTienda) : [];
+
+  useEffect(() => {
+    if (showTienda && !proveedorActivo) {
+      setShowTienda(null);
+    }
+  }, [showTienda, proveedorActivo]);
 
   const workerOrders = orders.filter(o => o.trabajador_id === worker.id).slice(0, 5);
 
@@ -402,7 +424,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
 
             {/* Filtro chips por categoría */}
             {(() => {
-              const commercialProviders = providers.filter(p => !isLiquidityProvider(p));
+              const commercialProviders = activeProviders.filter(p => !isLiquidityProvider(p));
               const cats = [...new Set(commercialProviders.map(p => p.categoria))];
               return (
                 <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
@@ -415,9 +437,9 @@ export const WorkerMobileView = memo(function WorkerMobileView({
               );
             })()}
 
-            {/* Grid de proveedores */}
+            {/* Grid de proveedores activos */}
             <div className="grid grid-cols-1 gap-3">
-              {providers.filter(p => !isLiquidityProvider(p)).map(prov => {
+              {activeProviders.filter(p => !isLiquidityProvider(p)).map(prov => {
                 const provProductos = productos.filter(p => p.proveedor_id === prov.id && p.activo);
                 const flagTienda = flags.find(f => f.modulo_id === 'tienda_online');
                 const isTiendaEnabled = !flagTienda || flagTienda.activo;
@@ -455,7 +477,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
                   </div>
                 );
               })}
-              {providers.length === 0 && (
+              {activeProviders.filter(p => !isLiquidityProvider(p)).length === 0 && (
                 <p className="text-center text-slate-400 text-sm py-8">Sin proveedores disponibles</p>
               )}
             </div>
@@ -806,7 +828,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
       {showLineaDom && (
         <LineaDomesticaModal
           trabajadorId={worker.id}
-          proveedores={providers}
+          proveedores={activeProviders}
           cupoDisponible={worker.cupo_linea_domestica - worker.cupo_linea_domestica_usado}
           cupoTotal={worker.cupo_linea_domestica}
           bcvRate={bcvRate}
@@ -823,7 +845,7 @@ export const WorkerMobileView = memo(function WorkerMobileView({
           trabajadorCedula={worker.cedula}
           saldoDisponible={worker.limite_disponible}
           limiteTotal={worker.limite_total}
-          providers={providers}
+          providers={activeProviders}
           configLiquidezMap={configLiquidezMap}
           misSolicitudes={avanceSolicitudes}
           bcvRate={bcvRate}

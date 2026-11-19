@@ -8,11 +8,13 @@ import {
   DEFAULT_CONFIGURACION_LIQUIDEZ,
   calcularAvancePorPlazo,
   isLiquidityProvider,
+  isProviderActivo,
   parseSolicitudMetadata,
   getOperacionesComprasStatus,
   type FeatureFlag,
   type ConfiguracionLiquidez,
   type AvanceEfectivoSolicitud,
+  type EstadoComercio,
 } from '../types';
 import { FeatureGuard } from './FeatureGuard';
 
@@ -21,6 +23,7 @@ interface ProviderOption {
   nombre: string;
   categoria: string;
   tipo_proveedor?: string | null;
+  estado_comercio?: EstadoComercio | string | null;
 }
 
 interface AvanceEfectivoModalProps {
@@ -61,10 +64,13 @@ export function AvanceEfectivoModal({
   onSuccess,
   onNotification,
 }: AvanceEfectivoModalProps) {
-  // Detectar proveedores de liquidez registrados; si aún no se ha marcado uno específicamente, usar el primero
+  // Detectar proveedores de liquidez activos registrados
   const liquidityProviders = useMemo(() => {
-    const matching = providers.filter(p => isLiquidityProvider(p));
-    return matching.length > 0 ? matching : providers.slice(0, 1);
+    const allLiq = providers.filter(p => isLiquidityProvider(p));
+    if (allLiq.length > 0) {
+      return allLiq.filter(p => isProviderActivo(p));
+    }
+    return providers.filter(p => isProviderActivo(p)).slice(0, 1);
   }, [providers]);
 
   const [selectedProviderId, setSelectedProviderId] = useState<string>(liquidityProviders[0]?.id ?? '');

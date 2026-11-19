@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import {
-  QrCode, Camera, Zap, CheckCircle2, AlertCircle, RefreshCw, TrendingUp, AlertTriangle, Check, Clock
+  QrCode, Camera, Zap, CheckCircle2, AlertCircle, RefreshCw, TrendingUp, AlertTriangle, Check, Clock, Ban
 } from 'lucide-react';
+import { AVISO_CUENTA_SUSPENDIDA, type EstadoComercio } from '../types';
 
 const CREDIT_LEVELS = [
   { nivel: 1, nombre: 'Básico',     icon: '⭐',    color: 'text-slate-500',   bg: 'bg-slate-100',   porcentaje_inicial: 0.40 },
@@ -24,6 +25,8 @@ export interface ProviderPOSPanelProps {
     id: string;
     nombre: string;
     categoria: string;
+    estado_comercio?: EstadoComercio | string | null;
+    motivo_suspension?: string | null;
   };
   scannedWorkerInfo: {
     nombre: string;
@@ -88,6 +91,11 @@ export function ProviderPOSPanel({
   onCalculateAmount,
   onProcessPurchase,
 }: ProviderPOSPanelProps) {
+  const rawEstado = (currentProvider.estado_comercio || 'activo').toString().toLowerCase().trim();
+  const isSuspendido = rawEstado === 'suspendido';
+  const isEliminado = rawEstado === 'eliminado';
+  const isBloqueadoComercio = isSuspendido || isEliminado;
+  const isCajaBloqueada = enCorteNomina || isBloqueadoComercio;
 
   // Auto-scroll al resultado de la operación en teléfonos móviles cuando se calculan cuotas
   useEffect(() => {
@@ -117,9 +125,19 @@ export function ProviderPOSPanel({
           <span className="text-[10px] font-bold text-[#002855] bg-blue-50 border border-blue-100 py-1 px-3 rounded-full uppercase">
             {currentProvider.categoria}
           </span>
-          <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-200 py-1 px-3 rounded-full">
-            Comercio Afiliado
-          </span>
+          {isSuspendido ? (
+            <span className="text-[10px] text-amber-800 font-black bg-amber-100 border border-amber-300 py-1 px-3 rounded-full">
+              ⚠️ Comercio Suspendido
+            </span>
+          ) : isEliminado ? (
+            <span className="text-[10px] text-red-700 font-black bg-red-100 border border-red-300 py-1 px-3 rounded-full">
+              🚫 Comercio Dado de Baja
+            </span>
+          ) : (
+            <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-200 py-1 px-3 rounded-full">
+              Comercio Afiliado
+            </span>
+          )}
         </div>
         <div>
           <h3 className="text-slate-800 font-black text-sm">{currentProvider.nombre}</h3>
@@ -128,8 +146,29 @@ export function ProviderPOSPanel({
           </p>
         </div>
 
+        {/* Alerta Institucional de Cuenta Comercial Suspendida / Dada de Baja */}
+        {isBloqueadoComercio && (
+          <div className="bg-gradient-to-r from-red-50 via-amber-50 to-orange-50 border-2 border-red-300 rounded-2xl p-4 space-y-2 shadow-sm animate-fade-in">
+            <div className="flex items-center gap-2 text-red-900 font-black text-xs">
+              <Ban size={17} className="text-red-600 flex-shrink-0" />
+              <span>{isEliminado ? '🚫 Cuenta Comercial Dada de Baja' : '⚠️ Cuenta Comercial Suspendida Temporalmente'}</span>
+            </div>
+            <p className="text-[11px] text-red-800 font-bold leading-relaxed">
+              {AVISO_CUENTA_SUSPENDIDA}.
+            </p>
+            {currentProvider.motivo_suspension && (
+              <p className="text-[10px] text-amber-900 font-bold bg-white/90 border border-amber-200 rounded-xl px-3 py-1.5">
+                Nota administrativa: {currentProvider.motivo_suspension}
+              </p>
+            )}
+            <p className="text-[10px] text-slate-600 font-semibold">
+              📊 Tus <strong>Reportes Financieros</strong> y el historial de ventas continúan disponibles para conciliación de saldos pendientes.
+            </p>
+          </div>
+        )}
+
         {/* Alerta de Pausa Temporal por Corte de Nómina */}
-        {enCorteNomina && (
+        {enCorteNomina && !isBloqueadoComercio && (
           <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 space-y-1.5 shadow-sm animate-fade-in">
             <div className="flex items-center gap-2 text-amber-900 font-black text-xs">
               <Clock size={16} className="text-amber-600 flex-shrink-0 animate-pulse" />
@@ -152,22 +191,30 @@ export function ProviderPOSPanel({
             <div className="border-2 border-dashed border-slate-200 rounded-2xl py-8 flex flex-col items-center justify-center text-slate-400 gap-3 bg-slate-50/50">
               <QrCode size={44} className="stroke-1 animate-pulse text-[#002855]/40" />
               <p className="text-xs font-semibold text-center text-slate-600">
-                {enCorteNomina ? 'Facturación temporalmente en pausa por Corte de Nómina' : 'Esperando QR del trabajador'}<br />
+                {isBloqueadoComercio
+                  ? 'Procesamiento de nuevas ventas deshabilitado temporalmente'
+                  : enCorteNomina
+                  ? 'Facturación temporalmente en pausa por Corte de Nómina'
+                  : 'Esperando QR del trabajador'}<br />
                 <span className="text-[10px] text-slate-400">
-                  {enCorteNomina ? 'Tus reportes financieros y descargas de Excel siguen 100% activos' : 'Escanea para verificar su cupo disponible'}
+                  {isCajaBloqueada
+                    ? 'Tus reportes financieros siguen 100% activos para conciliación'
+                    : 'Escanea para verificar su cupo disponible'}
                 </span>
               </p>
             </div>
             <button
               onClick={onOpenScanner}
-              disabled={enCorteNomina}
+              disabled={isCajaBloqueada}
               className={`w-full text-sm font-black py-4 px-4 rounded-2xl shadow-lg transition flex items-center justify-center gap-2.5 ${
-                enCorteNomina
+                isCajaBloqueada
                   ? 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-75'
                   : 'bg-[#002855] hover:bg-[#073B73] active:scale-[0.98] text-white'
               }`}
             >
-              {enCorteNomina ? (
+              {isBloqueadoComercio ? (
+                <><Ban size={20} className="text-slate-500" /> Caja de Cobro Suspendida</>
+              ) : enCorteNomina ? (
                 <><Clock size={20} className="text-slate-500" /> Lector QR Deshabilitado (Corte en Curso)</>
               ) : (
                 <><Camera size={20} className="text-amber-300 animate-bounce" /> Activar Cámara y Escanear QR</>
@@ -176,7 +223,7 @@ export function ProviderPOSPanel({
             {currentUserRole === 'admin' && activeQR && onSimulateScan && (
               <button
                 onClick={onSimulateScan}
-                disabled={enCorteNomina}
+                disabled={isCajaBloqueada}
                 className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold py-2.5 px-4 rounded-xl border border-slate-200 transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Zap size={12} /> [Admin] Simular Escaneo del QR Activo
@@ -319,11 +366,13 @@ export function ProviderPOSPanel({
               <button
                 type="button"
                 onClick={onCalculateAmount}
-                disabled={enCorteNomina || isValidating || !posAmount || parseFloat(posAmount) <= 0}
+                disabled={isCajaBloqueada || isValidating || !posAmount || parseFloat(posAmount) <= 0}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-black py-3.5 px-3 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isValidating ? (
                   <><RefreshCw size={14} className="animate-spin" />Calculando...</>
+                ) : isBloqueadoComercio ? (
+                  <><Ban size={14} />Cuenta Suspendida</>
                 ) : enCorteNomina ? (
                   <><Clock size={14} />Corte en Curso</>
                 ) : (
@@ -469,12 +518,14 @@ export function ProviderPOSPanel({
                     </button>
                     <button
                       type="button"
-                      disabled={enCorteNomina || isProcessingPurchase || (aplicaInicial && validationResult.monto_inicial_calculado > 0 && !inicialConfirmada)}
+                      disabled={isCajaBloqueada || isProcessingPurchase || (aplicaInicial && validationResult.monto_inicial_calculado > 0 && !inicialConfirmada)}
                       onClick={onProcessPurchase}
                       className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-emerald-600 hover:to-green-500 active:scale-[0.98] text-white text-xs font-extrabold py-3.5 px-4 rounded-xl shadow-lg transition flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {isProcessingPurchase ? (
                         <><RefreshCw size={14} className="animate-spin" />Registrando...</>
+                      ) : isBloqueadoComercio ? (
+                        <><Ban size={14} />Cuenta Suspendida</>
                       ) : enCorteNomina ? (
                         <><Clock size={14} />Corte de Nómina en Curso</>
                       ) : (

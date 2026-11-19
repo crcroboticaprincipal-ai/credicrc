@@ -9,7 +9,8 @@ import {
   X, Home, Star, Lock, Upload, Eye, Zap,
   Award, ArrowUp, ArrowDown, Clock, AlertTriangle, Camera, CameraOff,
   Building2, Banknote, Phone, MapPin, BadgeCheck, ImagePlus, ToggleLeft,
-  ChevronDown, ChevronUp, FileSpreadsheet, RotateCcw, Ban
+  ChevronDown, ChevronUp, FileSpreadsheet, RotateCcw, Ban,
+  PauseCircle, PlayCircle, Archive, Trash2
 } from 'lucide-react';
 import {
   CATEGORIAS_PROVEEDOR,
@@ -22,6 +23,12 @@ import {
   isInstallmentAnulada,
   getMotivoAnulacion,
   getFechaAnulacion,
+  getEstadoComercio,
+  isProviderActivo,
+  isProviderEliminado,
+  getMotivoEstadoComercio,
+  getFechaCambioEstadoComercio,
+  AVISO_CUENTA_SUSPENDIDA,
   type CategoriaProveedor,
   type FeatureFlag,
   type ProductoProveedor,
@@ -29,6 +36,7 @@ import {
   type ConfiguracionLiquidez,
   type AvanceEfectivoSolicitud,
   type AvanceEfectivoCuota,
+  type EstadoComercio,
 } from './types';
 import { FeatureFlagPanel } from './components/FeatureFlagPanel';
 import { FeatureGuard } from './components/FeatureGuard';
@@ -179,6 +187,9 @@ interface Provider {
   id: string; nombre: string; categoria: CategoriaProveedor;
   cuenta_enlace: string; comision_colegio: string | number; created_at: string;
   tipo_proveedor?: 'comercio' | 'liquidez';
+  estado_comercio?: EstadoComercio;
+  motivo_suspension?: string | null;
+  fecha_cambio_estado?: string | null;
   // Campos extendidos del perfil del comercio
   razon_social?: string; rif?: string; direccion?: string; telefono?: string;
   pago_movil_banco?: string; pago_movil_cedula?: string; pago_movil_telefono?: string;
@@ -250,6 +261,9 @@ interface UserAccount {
     configuracion_liquidez?: ConfiguracionLiquidez;
     razon_social?: string; rif?: string; direccion?: string;
     banco_cuenta?: string; pago_movil_banco?: string; pago_movil_cedula?: string; pago_movil_telefono?: string;
+    estado_comercio?: EstadoComercio;
+    motivo_suspension?: string | null;
+    fecha_cambio_estado?: string | null;
   } | null;
   created_at: string;
 }
@@ -1218,7 +1232,6 @@ export default function App() {
   const [editProviderCuenta, setEditProviderCuenta] = useState('');
   const [editProviderComision, setEditProviderComision] = useState('4.0');
   const [isSavingProvider, setIsSavingProvider] = useState(false);
-  const [isDeletingProviderId, setIsDeletingProviderId] = useState<string | null>(null);
   const [processingDirectPayId, setProcessingDirectPayId] = useState<string | null>(null);
   const [adminTab, setAdminTab] = useState<'dashboard' | 'workers' | 'payroll' | 'providers' | 'direct-payments' | 'gamification' | 'tesoreria' | 'notificaciones' | 'feature-flags'>('dashboard');
   // ─ Perfil de Comercio (Módulo 4B)
@@ -1326,6 +1339,21 @@ export default function App() {
   const [adminTxSearch, setAdminTxSearch] = useState<string>('');
   const [adminTxFilter, setAdminTxFilter] = useState<'activas' | 'anuladas' | 'todas'>('todas');
 
+  // ─── ESTADOS MÓDULO DE CICLO DE VIDA DE PROVEEDORES (SUSPENSIÓN Y SOFT-DELETE) ─
+  const [providerLifecycleModal, setProviderLifecycleModal] = useState<{
+    provider: Provider;
+    targetState: EstadoComercio;
+  } | null>(null);
+  const [lifecycleMotivoInput, setLifecycleMotivoInput] = useState<string>('');
+  const [lifecycleConfirmCheck, setLifecycleConfirmCheck] = useState<boolean>(false);
+  const [isUpdatingProviderLifecycle, setIsUpdatingProviderLifecycle] = useState<boolean>(false);
+  const [adminProviderStatusFilter, setAdminProviderStatusFilter] = useState<'principales' | 'activos' | 'suspendidos' | 'eliminados'>('principales');
+  const [revokedProviderInfo, setRevokedProviderInfo] = useState<{
+    nombre: string;
+    motivo?: string | null;
+    fecha?: string | null;
+  } | null>(null);
+
   // ─── NOTIFICACIONES ─────────────────────────────────────────────────────────
   const addNotification = useCallback((type: SystemNotification['type'], title: string, message: string) => {
     setNotifications(prev => [{ id: Math.random().toString(), timestamp: new Date(), type, title, message }, ...prev.slice(0, 19)]);
@@ -1375,7 +1403,21 @@ export default function App() {
       setWorkers(pw);
       if (pw.length > 0 && !activeWorkerId) setActiveWorkerId(pw[0].id);
 
-      const provList: Provider[] = pRes.data || [];
+      const userByProvMap = new Map<string, any>();
+      (uRes.data || []).forEach((u: any) => {
+        if (u.proveedor_id) userByProvMap.set(u.proveedor_id, u);
+      });
+
+      const provList: Provider[] = (pRes.data || []).map((p: any): Provider => {
+        const linkedUser = userByProvMap.get(p.id);
+        const reg = linkedUser?.datos_registro;
+        return {
+          ...p,
+          estado_comercio: getEstadoComercio(p, reg),
+          motivo_suspension: getMotivoEstadoComercio(p, reg),
+          fecha_cambio_estado: getFechaCambioEstadoComercio(p, reg),
+        };
+      });
       setProviders(provList);
       if (provList.length > 0 && !activeProviderId) setActiveProviderId(provList[0].id);
 
@@ -1791,6 +1833,10 @@ export default function App() {
   const handleAddProducto = useCallback(async (data: { nombre: string; descripcion: string; precio: string; imagen?: File }) => {
     const provId = currentUser?.proveedor_id || activeProviderId;
     if (!provId) throw new Error('No hay sesión activa de proveedor.');
+    const targetProv = providers.find(p => p.id === provId);
+    if (targetProv && !isProviderActivo(targetProv)) {
+      throw new Error(AVISO_CUENTA_SUSPENDIDA);
+    }
     let imagen_url: string | null = null;
     if (data.imagen) {
       try {
@@ -1863,10 +1909,15 @@ export default function App() {
     }
 
     await fetchData();
-  }, [activeProviderId, currentUser, fetchData]);
+  }, [activeProviderId, currentUser, providers, fetchData]);
 
   const handleToggleProducto = useCallback(async (productoId: string, activo: boolean) => {
     const provId = currentUser?.proveedor_id || activeProviderId;
+    const targetProv = providers.find(p => p.id === provId);
+    if (targetProv && !isProviderActivo(targetProv)) {
+      addNotification('warning', 'Cuenta Comercial Suspendida', AVISO_CUENTA_SUSPENDIDA);
+      return;
+    }
     if (provId) {
       const { data: userRec } = await supabase.from('usuarios_credicrc').select('id, datos_registro').eq('proveedor_id', provId).maybeSingle();
       if (userRec && userRec.datos_registro && Array.isArray(userRec.datos_registro.productos)) {
@@ -1878,10 +1929,15 @@ export default function App() {
       await supabase.from('productos_proveedor').update({ activo, updated_at: new Date().toISOString() }).eq('id', productoId);
     } catch (e) {}
     await fetchData();
-  }, [activeProviderId, currentUser, fetchData]);
+  }, [activeProviderId, currentUser, providers, addNotification, fetchData]);
 
   const handleToggleStock = useCallback(async (productoId: string, disponible: boolean) => {
     const provId = currentUser?.proveedor_id || activeProviderId;
+    const targetProv = providers.find(p => p.id === provId);
+    if (targetProv && !isProviderActivo(targetProv)) {
+      addNotification('warning', 'Cuenta Comercial Suspendida', AVISO_CUENTA_SUSPENDIDA);
+      return;
+    }
     if (provId) {
       const { data: userRec } = await supabase.from('usuarios_credicrc').select('id, datos_registro').eq('proveedor_id', provId).maybeSingle();
       if (userRec && userRec.datos_registro && Array.isArray(userRec.datos_registro.productos)) {
@@ -1893,10 +1949,15 @@ export default function App() {
       await supabase.from('productos_proveedor').update({ stock_disponible: disponible, updated_at: new Date().toISOString() }).eq('id', productoId);
     } catch (e) {}
     await fetchData();
-  }, [activeProviderId, currentUser, fetchData]);
+  }, [activeProviderId, currentUser, providers, addNotification, fetchData]);
 
   const handleDeleteProducto = useCallback(async (productoId: string) => {
     const provId = currentUser?.proveedor_id || activeProviderId;
+    const targetProv = providers.find(p => p.id === provId);
+    if (targetProv && !isProviderActivo(targetProv)) {
+      addNotification('warning', 'Cuenta Comercial Suspendida', AVISO_CUENTA_SUSPENDIDA);
+      return;
+    }
     if (provId) {
       const { data: userRec } = await supabase.from('usuarios_credicrc').select('id, datos_registro').eq('proveedor_id', provId).maybeSingle();
       if (userRec && userRec.datos_registro && Array.isArray(userRec.datos_registro.productos)) {
@@ -1908,7 +1969,7 @@ export default function App() {
       await supabase.from('productos_proveedor').delete().eq('id', productoId);
     } catch (e) {}
     await fetchData();
-  }, [activeProviderId, currentUser, fetchData]);
+  }, [activeProviderId, currentUser, providers, addNotification, fetchData]);
 
   // ─── PUSH NOTIFICATIONS REGISTER HOOK ───
   useEffect(() => {
@@ -1974,6 +2035,28 @@ export default function App() {
           event: '*',
           schema: 'public',
           table: 'feature_flags',
+        },
+        () => {
+          void fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'proveedores_aliados',
+        },
+        () => {
+          void fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'usuarios_credicrc',
         },
         () => {
           void fetchData();
@@ -2081,6 +2164,30 @@ export default function App() {
       if (!data) { addNotification('error', 'Credenciales Incorrectas', 'Correo o contraseña inválidos.'); return; }
       const user = data as UserAccount;
       if (!user.aprobado) { addNotification('warning', 'Cuenta Pendiente', 'Tu cuenta está en espera de aprobación.'); return; }
+
+      // Verificar si es un proveedor dado de baja permanentemente ('eliminado')
+      if (user.rol === 'proveedor' || user.rol === 'proveedor_liquidez') {
+        let linkedProv = providers.find(p => (user.proveedor_id && p.id === user.proveedor_id) || p.nombre === user.nombre);
+        if (user.proveedor_id) {
+          const { data: liveProv } = await supabase
+            .from('proveedores_aliados')
+            .select('*')
+            .eq('id', user.proveedor_id)
+            .maybeSingle();
+          if (liveProv) linkedProv = liveProv as Provider;
+        }
+        const estadoProv = getEstadoComercio(linkedProv, user.datos_registro);
+        if (estadoProv === 'eliminado') {
+          setRevokedProviderInfo({
+            nombre: linkedProv?.nombre || user.nombre,
+            motivo: getMotivoEstadoComercio(linkedProv, user.datos_registro),
+            fecha: getFechaCambioEstadoComercio(linkedProv, user.datos_registro),
+          });
+          addNotification('error', '🚫 Acceso Comercial Revocado', 'Esta cuenta de proveedor ha sido dada de baja permanentemente en CrediCRC.');
+          return;
+        }
+      }
+
       setCurrentUser(user);
       // Módulo 5 & Liquidez: Tesorería accede como 'admin'; proveedor_liquidez accede al módulo 'proveedor' aislado
       const mappedRole =
@@ -2502,6 +2609,34 @@ export default function App() {
     return true;
   }, [enCorteNomina, mensajeCorteNomina, addNotification]);
 
+  // ─── BLINDAJE EN VIVO: VERIFICAR QUE EL COMERCIO ESTÉ ACTIVO ─────────────────
+  const verifyProviderActivoLive = useCallback(async (provId: string): Promise<boolean> => {
+    if (!provId || provId === '__consola_liquidez__') return true;
+    const localProv = providers.find(p => p.id === provId);
+    const localUser = systemUsers.find(u => u.proveedor_id === provId);
+    let estado = getEstadoComercio(localProv, localUser?.datos_registro);
+    try {
+      const { data: liveProv } = await supabase
+        .from('proveedores_aliados')
+        .select('*')
+        .eq('id', provId)
+        .maybeSingle();
+      if (liveProv) {
+        estado = getEstadoComercio(liveProv as any, localUser?.datos_registro);
+      }
+    } catch { /* sin red: usar estado local */ }
+
+    if (estado === 'suspendido') {
+      addNotification('warning', '⚠️ Cuenta Comercial Suspendida', AVISO_CUENTA_SUSPENDIDA);
+      return false;
+    }
+    if (estado === 'eliminado') {
+      addNotification('error', '🚫 Acceso Comercial Revocado', 'Esta cuenta comercial fue dada de baja permanentemente.');
+      return false;
+    }
+    return true;
+  }, [providers, systemUsers, addNotification]);
+
   // ─── GENERAR QR DE IDENTIDAD (sin montos) ────────────────────────────────────
   const handleGenerateQR = async () => {
     const worker = workers.find(w => w.id === activeWorkerId); if (!worker) return;
@@ -2540,6 +2675,8 @@ export default function App() {
     setShowQRScannerModal(false);
     const okLive = await verifyComprasActivasLive('provider');
     if (!okLive) return;
+    const okProv = await verifyProviderActivoLive(activeProviderId);
+    if (!okProv) return;
     // Retener el token en ref por si hay corte de red durante los reintentos
     pendingTokenRef.current = token;
     setScannedToken(token);
@@ -2616,12 +2753,16 @@ export default function App() {
     };
 
     await attemptValidation(0);
-  }, [activeProviderId, posDays, addNotification, verifyComprasActivasLive]);
+  }, [activeProviderId, posDays, addNotification, verifyComprasActivasLive, verifyProviderActivoLive]);
 
   // Simulación para modo Admin (testing)
   const handleSimulateScan = () => {
     if (enCorteNomina) {
       addNotification('warning', '⏸️ Corte de Nómina en Curso', mensajeCorteNomina);
+      return;
+    }
+    if (currentProvider && !isProviderActivo(currentProvider)) {
+      addNotification('warning', '⚠️ Cuenta Comercial Suspendida', AVISO_CUENTA_SUSPENDIDA);
       return;
     }
     if (!activeQR) { addNotification('warning', 'Sin QR Activo', 'Genera un QR desde el portal del trabajador primero.'); return; }
@@ -2639,6 +2780,8 @@ export default function App() {
     try {
       const okLive = await verifyComprasActivasLive('provider');
       if (!okLive) return;
+      const okProv = await verifyProviderActivoLive(activeProviderId);
+      if (!okProv) return;
 
       // Promoción sin inicial: se lee la bandera fresca de BD para que el cambio del admin
       // aplique de inmediato aunque el proveedor no haya recargado la app.
@@ -2699,6 +2842,8 @@ export default function App() {
       // Blindaje definitivo antes de descontar saldo o insertar en transacciones_credicrc
       const okLive = await verifyComprasActivasLive('provider');
       if (!okLive) return;
+      const okProv = await verifyProviderActivoLive(activeProviderId);
+      if (!okProv) return;
 
       const txId = await supabase.rpc('crear_transaccion_credicrc', {
         p_trabajador_id: worker.id,
@@ -2728,6 +2873,8 @@ export default function App() {
   // ─── GUARDAR PERFIL DE COMERCIO (Módulo 4B) ──────────────────────────────────
   const handleSaveProviderProfile = async () => {
     if (!currentProvider) return;
+    const okProv = await verifyProviderActivoLive(currentProvider.id);
+    if (!okProv) return;
     setIsSavingProfile(true);
     try {
       let logo_url = currentProvider.logo_url;
@@ -2951,31 +3098,92 @@ export default function App() {
     }
   };
 
-  const handleDeleteProvider = async (id: string) => {
-    const prov = providers.find(p => p.id === id);
-    if (!prov) return;
+  // ─── ADMIN: GESTIÓN DEL CICLO DE VIDA DE PROVEEDORES (SUSPENSIÓN Y SOFT-DELETE) ─
+  const handleOpenProviderLifecycleModal = (prov: Provider, targetState: EstadoComercio) => {
+    setProviderLifecycleModal({ provider: prov, targetState });
+    setLifecycleMotivoInput(targetState === 'activo' ? '' : (prov.motivo_suspension || ''));
+    setLifecycleConfirmCheck(false);
+  };
 
-    // Validar si tiene transacciones
-    const provTrans = transactions.filter(t => t.proveedor_id === id);
-    if (provTrans.length > 0) {
-      addNotification('error', 'No se puede eliminar', `El proveedor ${prov.nombre} tiene transacciones asociadas. Te sugerimos editar sus datos en su lugar.`);
+  const handleCambiarEstadoComercio = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!providerLifecycleModal) return;
+
+    const { provider: prov, targetState } = providerLifecycleModal;
+    if (targetState === 'eliminado' && !lifecycleConfirmCheck) {
+      addNotification('warning', 'Confirmación Requerida', 'Por favor marque la casilla de doble confirmación para proceder con la baja permanente.');
       return;
     }
 
-    if (!window.confirm(`¿Estás seguro de que deseas eliminar al proveedor ${prov.nombre}? Esta acción es irreversible.`)) {
-      return;
-    }
+    const cleanMotivo = targetState === 'activo' ? null : (lifecycleMotivoInput.trim() || null);
+    const nowIso = new Date().toISOString();
 
-    setIsDeletingProviderId(id);
+    setIsUpdatingProviderLifecycle(true);
     try {
-      const { error } = await supabase.from('proveedores_aliados').delete().eq('id', id);
-      if (error) throw error;
-      addNotification('success', 'Proveedor Eliminado', `${prov.nombre} ha sido removido del sistema.`);
+      // 1. Intentar RPC atómico cambiar_estado_comercio_proveedor en Supabase
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('cambiar_estado_comercio_proveedor', {
+        p_proveedor_id: prov.id,
+        p_nuevo_estado: targetState,
+        p_motivo: cleanMotivo,
+      });
+
+      if (!rpcErr && rpcRes && Array.isArray(rpcRes) && rpcRes[0]) {
+        const res = rpcRes[0];
+        if (!res.ok) {
+          throw new Error(res.mensaje || 'No se pudo actualizar el estado del proveedor.');
+        }
+      } else {
+        // 2. Fallback directo sobre proveedores_aliados (CERO DELETE)
+        await supabase
+          .from('proveedores_aliados')
+          .update({
+            estado_comercio: targetState,
+            motivo_suspension: cleanMotivo,
+            fecha_cambio_estado: nowIso,
+          })
+          .eq('id', prov.id);
+
+        // 3. Sincronizar respaldo en usuarios_credicrc.datos_registro sin borrar al usuario
+        const linkedUsers = systemUsers.filter(u => u.proveedor_id === prov.id || (u.rol !== 'trabajador' && u.rol !== 'admin' && u.nombre === prov.nombre));
+        for (const u of linkedUsers) {
+          await supabase
+            .from('usuarios_credicrc')
+            .update({
+              datos_registro: {
+                ...(u.datos_registro || {}),
+                estado_comercio: targetState,
+                motivo_suspension: cleanMotivo,
+                fecha_cambio_estado: nowIso,
+              },
+            })
+            .eq('id', u.id);
+        }
+      }
+
+      // Actualizar estado local inmediatamente para respuesta visual instantánea
+      setProviders(prev => prev.map(p => p.id === prov.id ? {
+        ...p,
+        estado_comercio: targetState,
+        motivo_suspension: cleanMotivo,
+        fecha_cambio_estado: nowIso,
+      } : p));
+
+      if (targetState === 'activo') {
+        addNotification('success', '🟢 Comercio Reactivado', `"${prov.nombre}" se encuentra nuevamente activo en el directorio y punto de venta.`);
+      } else if (targetState === 'suspendido') {
+        addNotification('warning', '⏸️ Comercio Suspendido Temporalmente', `Se ha pausado la caja de cobro y ocultado a "${prov.nombre}" del directorio de trabajadores.`);
+      } else {
+        addNotification('info', '🗄️ Baja Permanente Registrada (Soft-Delete)', `"${prov.nombre}" fue archivado y su acceso fue revocado, conservando el 100% de su historial contable y liquidaciones.`);
+      }
+
+      setProviderLifecycleModal(null);
+      setLifecycleMotivoInput('');
+      setLifecycleConfirmCheck(false);
       await fetchData();
     } catch (err: any) {
-      addNotification('error', 'Error al Eliminar', err.message);
+      addNotification('error', 'Error al Cambiar Estado', err.message || 'No se pudo actualizar el estado del comercio.');
     } finally {
-      setIsDeletingProviderId(null);
+      setIsUpdatingProviderLifecycle(false);
     }
   };
 
@@ -3786,6 +3994,258 @@ export default function App() {
         );
       })()}
 
+      {/* ── MODAL DE GESTIÓN DEL CICLO DE VIDA DE PROVEEDORES (SUSPENSIÓN / REACTIVACIÓN / BAJA PERMANENTE SOFT-DELETE) ── */}
+      {providerLifecycleModal && (() => {
+        const { provider: prov, targetState } = providerLifecycleModal;
+        const recon = supplierReconciliation.find(r => r.id === prov.id);
+        const pendProv = recon?.montoPendienteProveedor ?? 0;
+        const pendCom = recon?.comisionPendienteColegio ?? 0;
+        const totalHist = recon?.totalVendido ?? 0;
+        const isSuspending = targetState === 'suspendido';
+        const isReactivating = targetState === 'activo';
+        const isEliminating = targetState === 'eliminado';
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm animate-fade-in"
+            onClick={() => !isUpdatingProviderLifecycle && setProviderLifecycleModal(null)}
+          >
+            <div
+              className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 text-left"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className={`p-6 text-white relative ${
+                isReactivating
+                  ? 'bg-gradient-to-r from-emerald-600 to-green-700'
+                  : isSuspending
+                  ? 'bg-gradient-to-r from-amber-500 via-orange-600 to-amber-700'
+                  : 'bg-gradient-to-r from-[#002855] via-red-800 to-[#E53935]'
+              }`}>
+                <button
+                  type="button"
+                  disabled={isUpdatingProviderLifecycle}
+                  onClick={() => setProviderLifecycleModal(null)}
+                  className="absolute top-4 right-4 text-white/80 hover:text-white p-1"
+                >
+                  <X size={18} />
+                </button>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center flex-shrink-0 shadow-inner">
+                    {isReactivating ? (
+                      <PlayCircle size={26} className="text-white" />
+                    ) : isSuspending ? (
+                      <PauseCircle size={26} className="text-white" />
+                    ) : (
+                      <Archive size={26} className="text-white" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="inline-block text-[10px] font-black uppercase tracking-widest bg-black/25 px-2.5 py-0.5 rounded-full mb-1">
+                      {isReactivating
+                        ? 'Restablecimiento Operativo'
+                        : isSuspending
+                        ? 'Pausa Temporal de Operaciones'
+                        : 'Baja Permanente Lógica · Cero Borrado Físico'}
+                    </span>
+                    <h3 className="text-base font-black tracking-tight">
+                      {isReactivating
+                        ? `Reactivar Comercio: ${prov.nombre}`
+                        : isSuspending
+                        ? `Suspender Comercio: ${prov.nombre}`
+                        : `Eliminar Proveedor (Soft-Delete): ${prov.nombre}`}
+                    </h3>
+                  </div>
+                </div>
+              </div>
+
+              <form onSubmit={handleCambiarEstadoComercio} className="p-6 space-y-4">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2 text-xs">
+                  <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                    <span className="text-slate-500 font-bold">Comercio / Proveedor:</span>
+                    <span className="font-black text-[#002855]">{prov.nombre} ({prov.categoria})</span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                    <span className="text-slate-500 font-bold">Transición de Estado:</span>
+                    <span className="font-black uppercase text-slate-800">
+                      {getEstadoComercio(prov)} →{' '}
+                      <span className={
+                        isReactivating ? 'text-emerald-700' : isSuspending ? 'text-amber-700' : 'text-red-700'
+                      }>
+                        {targetState}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                    <span className="text-slate-500 font-bold">Historial Total Preservado:</span>
+                    <span className="font-mono font-bold text-slate-800">${totalHist.toFixed(2)} USD</span>
+                  </div>
+                  {(pendProv > 0 || pendCom > 0) && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-2.5 text-[11px] text-blue-900 font-semibold space-y-1 mt-1">
+                      <p className="font-black uppercase text-[10px] text-blue-700">
+                        🛡️ Protección de Liquidaciones Pendientes:
+                      </p>
+                      <p>
+                        Este proveedor mantiene <strong>${pendProv.toFixed(2)}</strong> por liquidar (Bloque A) y <strong>${pendCom.toFixed(2)}</strong> de comisión (Bloque B). Estos saldos permanecerán 100% visibles y habilitados en tu panel para cerrar y cuadrar hasta el último centavo.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {isEliminating && (
+                  <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 space-y-3">
+                    <p className="text-xs font-black text-red-900 leading-relaxed">
+                      ⚠️ ¿Estás seguro? Esta acción revocará permanentemente el acceso del comercio y lo ocultará del directorio, conservando su historial contable.
+                    </p>
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none bg-white border border-red-200 rounded-xl p-3">
+                      <input
+                        type="checkbox"
+                        checked={lifecycleConfirmCheck}
+                        onChange={e => setLifecycleConfirmCheck(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-red-300 text-red-600 focus:ring-red-500"
+                      />
+                      <span className="text-[11px] font-bold text-slate-800 leading-snug">
+                        Confirmo la baja permanente lógica de <strong>{prov.nombre}</strong> (revocar inicio de sesión y mover a Archivo / Históricos sin borrar sus transacciones).
+                      </span>
+                    </label>
+                  </div>
+                )}
+
+                {isSuspending && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-[11px] text-amber-900 font-semibold leading-relaxed space-y-1">
+                    <p><strong>Efecto inmediato:</strong></p>
+                    <ul className="list-disc pl-4 space-y-0.5">
+                      <li>Se oculta del directorio de Comercios Aliados y de la Tienda Online para los trabajadores.</li>
+                      <li>Se bloquea su caja de cobro (QR, POS y edición de catálogo), manteniendo activos sus Reportes Financieros.</li>
+                      <li>Puedes revertir la pausa en cualquier momento con el botón <strong>"Reactivar Comercio"</strong>.</li>
+                    </ul>
+                  </div>
+                )}
+
+                {isReactivating && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 text-[11px] text-emerald-900 font-semibold leading-relaxed">
+                    <strong>Efecto inmediato:</strong> El comercio volverá a estar visible en el directorio de trabajadores, su catálogo online quedará habilitado y podrá iniciar sesión y procesar cobros por QR / POS con normalidad.
+                  </div>
+                )}
+
+                {!isReactivating && (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                      {isSuspending ? 'Motivo Interno de Suspensión (Opcional)' : 'Motivo de Baja Permanente (Registro Interno)'}
+                    </label>
+                    <input
+                      type="text"
+                      value={lifecycleMotivoInput}
+                      onChange={e => setLifecycleMotivoInput(e.target.value)}
+                      placeholder={isSuspending ? 'Ej: Pausa temporal por inventario o revisión de acuerdo' : 'Ej: Fin de relación comercial con el colegio'}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#002855] focus:ring-2 focus:ring-[#002855]/20"
+                    />
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {(isSuspending
+                        ? [
+                            'Pausa temporal de operaciones',
+                            'Conciliación de saldos pendientes',
+                            'Solicitud temporal del comercio',
+                          ]
+                        : [
+                            'Finalización de acuerdo comercial',
+                            'Cierre definitivo del establecimiento',
+                            'Baja administrativa acordada',
+                          ]
+                      ).map(sug => (
+                        <button
+                          key={sug}
+                          type="button"
+                          onClick={() => setLifecycleMotivoInput(sug)}
+                          className="text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 px-2.5 py-1 rounded-lg border border-slate-200 transition"
+                        >
+                          {sug}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    disabled={isUpdatingProviderLifecycle}
+                    onClick={() => setProviderLifecycleModal(null)}
+                    className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isUpdatingProviderLifecycle || (isEliminating && !lifecycleConfirmCheck)}
+                    className={`flex-1 py-3 px-4 rounded-xl text-white text-xs font-black shadow-lg transition flex items-center justify-center gap-1.5 disabled:opacity-50 ${
+                      isReactivating
+                        ? 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700'
+                        : isSuspending
+                        ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700'
+                        : 'bg-gradient-to-r from-red-600 to-[#E53935] hover:from-red-700 hover:to-red-600'
+                    }`}
+                  >
+                    {isUpdatingProviderLifecycle ? (
+                      <><RefreshCw size={14} className="animate-spin" /> Actualizando Estado...</>
+                    ) : isReactivating ? (
+                      <><PlayCircle size={15} /> Confirmar Reactivación</>
+                    ) : isSuspending ? (
+                      <><PauseCircle size={15} /> Suspender Comercio</>
+                    ) : (
+                      <><Trash2 size={15} /> Confirmar Baja Permanente</>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── PANTALLA / MODAL DE ACCESO COMERCIAL REVOCADO (PROVEEDOR DADO DE BAJA) ── */}
+      {revokedProviderInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border-2 border-red-300 text-center">
+            <div className="bg-gradient-to-r from-[#002855] via-red-800 to-[#E53935] p-6 text-white">
+              <div className="w-16 h-16 bg-white/15 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner">
+                <Ban size={34} className="text-white" />
+              </div>
+              <span className="inline-block text-[10px] font-black uppercase tracking-widest bg-black/25 px-3 py-0.5 rounded-full mb-1">
+                Control de Acceso · CrediCRC
+              </span>
+              <h3 className="text-lg font-black tracking-tight">
+                🚫 Acceso Comercial Revocado
+              </h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm font-bold text-slate-800 leading-relaxed">
+                La cuenta comercial de <strong className="text-[#002855]">{revokedProviderInfo.nombre}</strong> ha sido dada de baja permanentemente en la plataforma CrediCRC.
+              </p>
+              <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+                El inicio de sesión y el procesamiento de operaciones para este establecimiento se encuentran deshabilitados. Si requiere información sobre su historial contable o liquidaciones pasadas, comuníquese con la Administración de CrediCRC.
+              </p>
+              {revokedProviderInfo.motivo && (
+                <div className="bg-red-50 border border-red-200 rounded-2xl p-3 text-xs font-bold text-red-800">
+                  Motivo registrado: {revokedProviderInfo.motivo}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setRevokedProviderInfo(null);
+                  if (currentUser && (currentUser.rol === 'proveedor' || currentUser.rol === 'proveedor_liquidez')) {
+                    handleLogout();
+                  }
+                }}
+                className="w-full py-3.5 rounded-2xl bg-[#002855] hover:bg-[#073B73] text-white font-black text-xs uppercase tracking-wider shadow-lg transition"
+              >
+                Cerrar y Volver al Inicio
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── NAVBAR ── */}
       <header className="bg-white border-b border-slate-200 shadow-sm px-3 md:px-8 py-2 md:py-3.5 flex flex-col md:flex-row items-center justify-between gap-2.5 md:gap-4 md:sticky md:top-0 z-40">
         <div className="flex items-center justify-between w-full md:w-auto">
@@ -3870,7 +4330,7 @@ export default function App() {
                   {[
                     { icon: <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"/>, label: 'Tasa BCV:', val: `Bs. ${bcvRate.toFixed(2)}` },
                     { icon: <Users size={14} className="text-[#64B5F6]"/>, label: 'Personal:', val: `${workers.length}` },
-                    { icon: <ShoppingBag size={14} className="text-[#D4AF37]"/>, label: 'Comercios:', val: `${providers.length}` },
+                    { icon: <ShoppingBag size={14} className="text-[#D4AF37]"/>, label: 'Comercios:', val: `${providers.filter(p => isProviderActivo(p)).length}` },
                     { icon: <ShieldCheck size={14} className="text-emerald-400"/>, label: 'Pagos Directos Pendientes:', val: `${pendingDirectPayments}` },
                   ].map((p, i) => (
                     <div key={i} className="flex items-center gap-2 bg-black/20 border border-white/10 px-3.5 py-2 rounded-xl">
@@ -4148,7 +4608,7 @@ export default function App() {
                             saldoDisponible={currentWorker.limite_disponible}
                             limiteTotal={currentWorker.limite_total}
                             bcvRate={bcvRate}
-                            providers={providers as any}
+                            providers={providers.filter(p => isProviderActivo(p)) as any}
                             flags={featureFlags}
                             configLiquidezMap={configLiquidezMap}
                             misSolicitudes={avanceSolicitudes.filter(s => s.trabajador_id === currentWorker.id)}
@@ -4463,6 +4923,41 @@ export default function App() {
               {/* ════════════ MÓDULO PROVEEDOR / CONSOLA DE LIQUIDEZ ════════════ */}
               {activeRole === 'proveedor' && (
                 currentUser && (currentUser.rol === 'proveedor' || currentUser.rol === 'proveedor_liquidez' || currentUser.rol === 'admin') ? (
+                  (currentUser.rol === 'proveedor' || currentUser.rol === 'proveedor_liquidez') && currentProvider && isProviderEliminado(currentProvider) ? (
+                    <div className="bg-white rounded-3xl border-2 border-red-300 shadow-2xl overflow-hidden max-w-lg mx-auto my-8 text-center animate-fade-in">
+                      <div className="bg-gradient-to-r from-[#002855] via-red-800 to-[#E53935] p-6 text-white">
+                        <div className="w-16 h-16 bg-white/15 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner">
+                          <Ban size={34} className="text-white" />
+                        </div>
+                        <span className="inline-block text-[10px] font-black uppercase tracking-widest bg-black/25 px-3 py-0.5 rounded-full mb-1">
+                          Control de Acceso · CrediCRC
+                        </span>
+                        <h3 className="text-lg font-black tracking-tight">
+                          🚫 Acceso Comercial Revocado
+                        </h3>
+                      </div>
+                      <div className="p-6 space-y-4">
+                        <p className="text-sm font-bold text-slate-800 leading-relaxed">
+                          La cuenta comercial de <strong className="text-[#002855]">{currentProvider.nombre}</strong> ha sido dada de baja permanentemente en la plataforma CrediCRC.
+                        </p>
+                        <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+                          El inicio de sesión y el procesamiento de nuevas operaciones para este establecimiento han sido revocados. Comuníquese con la Administración de CrediCRC para consultas históricas.
+                        </p>
+                        {currentProvider.motivo_suspension && (
+                          <div className="bg-red-50 border border-red-200 rounded-2xl p-3 text-xs font-bold text-red-800">
+                            Motivo administrativo: {currentProvider.motivo_suspension}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          className="w-full py-3.5 rounded-2xl bg-[#002855] hover:bg-[#073B73] text-white font-black text-xs uppercase tracking-wider shadow-lg transition"
+                        >
+                          Cerrar Sesión y Salir
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
                   <div className="space-y-6 animate-fade-in">
                     {currentUser.rol === 'admin' && (
                       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -4490,11 +4985,15 @@ export default function App() {
                             {!providers.some(p => isLiquidityProvider(p)) && (
                               <option value="__consola_liquidez__">💵 Consola Proveedor de Liquidez (Efectivo)</option>
                             )}
-                            {providers.map(p => (
-                              <option key={p.id} value={p.id}>
-                                {isLiquidityProvider(p) ? '💵 ' : '🏪 '}{p.nombre} ({p.categoria})
-                              </option>
-                            ))}
+                            {providers.map(p => {
+                              const st = getEstadoComercio(p);
+                              const stTag = st === 'suspendido' ? ' [⏸️ SUSPENDIDO]' : st === 'eliminado' ? ' [🚫 ARCHIVADO]' : '';
+                              return (
+                                <option key={p.id} value={p.id}>
+                                  {isLiquidityProvider(p) ? '💵 ' : '🏪 '}{p.nombre} ({p.categoria}){stTag}
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
                       </div>
@@ -4512,6 +5011,8 @@ export default function App() {
                           pago_movil_banco: currentProvider.pago_movil_banco,
                           pago_movil_cedula: currentProvider.pago_movil_cedula,
                           pago_movil_telefono: currentProvider.pago_movil_telefono,
+                          estado_comercio: currentProvider.estado_comercio,
+                          motivo_suspension: currentProvider.motivo_suspension,
                         }}
                         solicitudes={avanceSolicitudes}
                         cuotas={avanceCuotas}
@@ -4538,6 +5039,8 @@ export default function App() {
                             id: currentProvider.id,
                             nombre: currentProvider.nombre,
                             categoria: currentProvider.categoria,
+                            estado_comercio: currentProvider.estado_comercio,
+                            motivo_suspension: currentProvider.motivo_suspension,
                           }}
                           scannedWorkerInfo={scannedWorkerInfo}
                           posAmount={posAmount}
@@ -4561,6 +5064,10 @@ export default function App() {
                           enCorteNomina={enCorteNomina}
                           mensajeCorteNomina={mensajeCorteNomina}
                           onOpenScanner={() => {
+                            if (!isProviderActivo(currentProvider)) {
+                              addNotification('warning', '⚠️ Cuenta Comercial Suspendida', AVISO_CUENTA_SUSPENDIDA);
+                              return;
+                            }
                             if (enCorteNomina) {
                               addNotification(
                                 'warning',
@@ -4600,6 +5107,9 @@ export default function App() {
                               pago_movil_banco: currentProvider.pago_movil_banco,
                               pago_movil_cedula: currentProvider.pago_movil_cedula,
                               pago_movil_telefono: currentProvider.pago_movil_telefono,
+                              estado_comercio: currentProvider.estado_comercio,
+                              motivo_suspension: currentProvider.motivo_suspension,
+                              fecha_cambio_estado: currentProvider.fecha_cambio_estado,
                             }}
                             productos={productos}
                             orders={orders}
@@ -4609,6 +5119,10 @@ export default function App() {
                             flags={featureFlags}
                             posSlot={posSlotNode}
                             onOpenScanner={() => {
+                              if (!isProviderActivo(currentProvider)) {
+                                addNotification('warning', '⚠️ Cuenta Comercial Suspendida', AVISO_CUENTA_SUSPENDIDA);
+                                return;
+                              }
                               if (enCorteNomina) {
                                 addNotification(
                                   'warning',
@@ -4983,9 +5497,20 @@ export default function App() {
                               </div>
 
                               <div className="flex justify-end">
-                                <button onClick={handleSaveProviderProfile} disabled={isSavingProfile || isUploadingLogo}
-                                  className="bg-gradient-to-r from-[#002855] to-[#073B73] hover:from-[#073B73] hover:to-[#002855] text-white text-xs font-black px-6 py-3 rounded-xl shadow-md transition flex items-center gap-2 disabled:opacity-50">
-                                  {isSavingProfile ? <><RefreshCw size={14} className="animate-spin"/>Guardando...</> : isUploadingLogo ? <><RefreshCw size={14} className="animate-spin"/>Subiendo Logo...</> : <><BadgeCheck size={14}/>Guardar Cambios del Perfil</>}
+                                <button
+                                  onClick={handleSaveProviderProfile}
+                                  disabled={isSavingProfile || isUploadingLogo || !isProviderActivo(currentProvider)}
+                                  className="bg-gradient-to-r from-[#002855] to-[#073B73] hover:from-[#073B73] hover:to-[#002855] text-white text-xs font-black px-6 py-3 rounded-xl shadow-md transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {!isProviderActivo(currentProvider) ? (
+                                    <><Ban size={14}/>Edición Bloqueada (Cuenta Suspendida)</>
+                                  ) : isSavingProfile ? (
+                                    <><RefreshCw size={14} className="animate-spin"/>Guardando...</>
+                                  ) : isUploadingLogo ? (
+                                    <><RefreshCw size={14} className="animate-spin"/>Subiendo Logo...</>
+                                  ) : (
+                                    <><BadgeCheck size={14}/>Guardar Cambios del Perfil</>
+                                  )}
                                 </button>
                               </div>
                             </div>
@@ -4994,6 +5519,7 @@ export default function App() {
                       </>
                     )}
                   </div>
+                  )
                 ) : <AuthCard role="proveedor" {...authCardProps}/>
               )}
 
@@ -6105,14 +6631,51 @@ export default function App() {
                                 </button>
                               </div>
                             </div>
-                            {/* Sub-tabs */}
-                            <div className="flex bg-slate-100 p-1 rounded-xl gap-1 w-fit">
-                              {(['conciliacion','historial'] as const).map(id => (
-                                <button key={id} onClick={() => setProviderAdminSubTab(id)}
-                                  className={`text-[11px] font-bold px-4 py-2 rounded-lg transition ${providerAdminSubTab === id ? 'bg-white text-[#002855] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                                  {id === 'conciliacion' ? '📊 Conciliación' : '📋 Historial de Cortes'}
-                                </button>
-                              ))}
+                            {/* Sub-tabs y Filtro de Ciclo de Vida de Proveedores */}
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex bg-slate-100 p-1 rounded-xl gap-1 w-fit">
+                                {(['conciliacion','historial'] as const).map(id => (
+                                  <button key={id} onClick={() => setProviderAdminSubTab(id)}
+                                    className={`text-[11px] font-bold px-4 py-2 rounded-lg transition ${providerAdminSubTab === id ? 'bg-white text-[#002855] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                                    {id === 'conciliacion' ? '📊 Conciliación y Estado' : '📋 Historial de Cortes'}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {providerAdminSubTab === 'conciliacion' && (() => {
+                                const countActivos = supplierReconciliation.filter(p => getEstadoComercio(p) === 'activo').length;
+                                const countSuspendidos = supplierReconciliation.filter(p => getEstadoComercio(p) === 'suspendido').length;
+                                const countEliminados = supplierReconciliation.filter(p => getEstadoComercio(p) === 'eliminado').length;
+                                const countPrincipales = supplierReconciliation.filter(p => {
+                                  const st = getEstadoComercio(p);
+                                  const tienePendientes = p.montoPendienteProveedor > 0 || p.comisionPendienteColegio > 0;
+                                  return st !== 'eliminado' || tienePendientes;
+                                }).length;
+
+                                return (
+                                  <div className="flex flex-wrap bg-slate-100 p-1 rounded-xl border border-slate-200 gap-1 text-[10px] font-black">
+                                    {([
+                                      { id: 'principales', label: `🏪 Gestión Principal (${countPrincipales})` },
+                                      { id: 'activos', label: `🟢 Activos (${countActivos})` },
+                                      { id: 'suspendidos', label: `⏸️ Suspendidos (${countSuspendidos})` },
+                                      { id: 'eliminados', label: `🗄️ Archivo / Históricos (${countEliminados})` },
+                                    ] as const).map(f => (
+                                      <button
+                                        key={f.id}
+                                        type="button"
+                                        onClick={() => setAdminProviderStatusFilter(f.id)}
+                                        className={`px-3 py-1.5 rounded-lg transition ${
+                                          adminProviderStatusFilter === f.id
+                                            ? 'bg-[#002855] text-white shadow-sm'
+                                            : 'text-slate-600 hover:text-[#002855]'
+                                        }`}
+                                      >
+                                        {f.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
                             </div>
                             {/* ── Conciliacion sub-tab ── */}
                             {providerAdminSubTab === 'conciliacion' && (<>
@@ -6156,74 +6719,200 @@ export default function App() {
                                   </div>
                                 </div>
                               )}
-                              {/* Tarjetas financieras por proveedor */}
+                              {/* Tarjetas financieras y de ciclo de vida por proveedor */}
                               <div className="space-y-4">
-                                {supplierReconciliation.length === 0 && <div className="text-center py-10 text-slate-400 text-sm">No hay proveedores registrados.</div>}
-                                {supplierReconciliation.map(p => {
-                                  const commPct = (parseFloat(p.comision_colegio as string) * 100).toFixed(1);
-                                  return (
-                                    <div key={p.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                                      <div className="bg-gradient-to-r from-[#002855] to-[#073B73] px-5 py-3.5 flex flex-wrap items-center justify-between gap-2">
-                                        <div className="flex items-center gap-3">
-                                          <div className="w-8 h-8 bg-white/10 rounded-xl flex items-center justify-center"><ShoppingBag size={15} className="text-white/80"/></div>
-                                          <div>
-                                            <p className="text-white font-black text-sm">{p.nombre}</p>
-                                            <p className="text-blue-200 text-[10px]">{p.categoria} · Comisión: {commPct}%</p>
+                                {(() => {
+                                  const filteredProvidersList = supplierReconciliation.filter(p => {
+                                    const st = getEstadoComercio(p);
+                                    const tienePendientes = p.montoPendienteProveedor > 0 || p.comisionPendienteColegio > 0;
+                                    if (adminProviderStatusFilter === 'activos') return st === 'activo';
+                                    if (adminProviderStatusFilter === 'suspendidos') return st === 'suspendido';
+                                    if (adminProviderStatusFilter === 'eliminados') return st === 'eliminado';
+                                    // 'principales': muestra activos, suspendidos, y cualquier comercio dado de baja que aún tenga liquidación pendiente (Protección de Liquidaciones Pendientes)
+                                    return st !== 'eliminado' || tienePendientes;
+                                  });
+
+                                  if (filteredProvidersList.length === 0) {
+                                    return (
+                                      <div className="text-center py-10 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-slate-400 text-xs font-semibold">
+                                        {adminProviderStatusFilter === 'eliminados'
+                                          ? 'No hay proveedores en el Archivo / Históricos.'
+                                          : adminProviderStatusFilter === 'suspendidos'
+                                          ? 'No hay comercios suspendidos temporalmente en este momento.'
+                                          : 'No hay proveedores registrados en esta vista.'}
+                                      </div>
+                                    );
+                                  }
+
+                                  return filteredProvidersList.map(p => {
+                                    const commPct = (parseFloat(p.comision_colegio as string) * 100).toFixed(1);
+                                    const estado = getEstadoComercio(p);
+                                    const isSusp = estado === 'suspendido';
+                                    const isElim = estado === 'eliminado';
+                                    const tienePendientes = p.montoPendienteProveedor > 0 || p.comisionPendienteColegio > 0;
+
+                                    return (
+                                      <div key={p.id} className={`bg-white border rounded-2xl overflow-hidden shadow-sm transition ${
+                                        isElim ? 'border-red-300 opacity-90' : isSusp ? 'border-amber-300' : 'border-slate-200'
+                                      }`}>
+                                        <div className={`px-5 py-3.5 flex flex-wrap items-center justify-between gap-2 ${
+                                          isElim
+                                            ? 'bg-gradient-to-r from-slate-800 via-red-950 to-slate-900'
+                                            : isSusp
+                                            ? 'bg-gradient-to-r from-amber-700 via-orange-700 to-amber-800'
+                                            : 'bg-gradient-to-r from-[#002855] to-[#073B73]'
+                                        }`}>
+                                          <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 bg-white/10 rounded-xl flex items-center justify-center">
+                                              {isElim ? <Archive size={15} className="text-red-300"/> : isSusp ? <PauseCircle size={15} className="text-amber-200"/> : <ShoppingBag size={15} className="text-white/80"/>}
+                                            </div>
+                                            <div>
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <p className="text-white font-black text-sm">{p.nombre}</p>
+                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
+                                                  isElim
+                                                    ? 'bg-red-500/25 text-red-100 border-red-400/50'
+                                                    : isSusp
+                                                    ? 'bg-amber-300 text-amber-950 border-amber-200'
+                                                    : 'bg-emerald-500/20 text-emerald-200 border-emerald-400/40'
+                                                }`}>
+                                                  {isElim ? '🚫 Eliminado (Archivo)' : isSusp ? '⏸️ Suspendido' : '🟢 Activo'}
+                                                </span>
+                                                {isElim && tienePendientes && (
+                                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-400 text-[#002855]">
+                                                    🛡️ Liquidación Pendiente
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <p className="text-blue-200 text-[10px]">
+                                                {p.categoria} · Comisión: {commPct}%
+                                                {p.motivo_suspension ? ` · Motivo: "${p.motivo_suspension}"` : ''}
+                                                {p.fecha_cambio_estado ? ` (${new Date(p.fecha_cambio_estado).toLocaleDateString('es-VE')})` : ''}
+                                              </p>
+                                            </div>
+                                          </div>
+                                          <div className="flex flex-wrap items-center gap-1.5">
+                                            <span className="text-[10px] text-blue-200 font-mono bg-white/10 px-2.5 py-1 rounded-lg">
+                                              Total ventas: <span className="text-white font-bold">${p.totalVendido.toFixed(2)}</span>
+                                            </span>
+                                            <button
+                                              title="Descargar Reporte Excel Completo"
+                                              onClick={() => handleExportSupplierReport(p.id)}
+                                              className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg shadow transition flex items-center gap-1 active:scale-95"
+                                            >
+                                              <FileSpreadsheet size={13} />
+                                              Excel
+                                            </button>
+                                            <button
+                                              title="Editar datos del comercio"
+                                              onClick={() => {
+                                                setEditingProvider(p);
+                                                setEditProviderNombre(p.nombre);
+                                                setEditProviderCategoria(p.categoria);
+                                                setEditProviderCuenta(p.cuenta_enlace);
+                                                setEditProviderComision((parseFloat(p.comision_colegio as string)*100).toString());
+                                                setShowAddProviderModal(false);
+                                              }}
+                                              className="p-1.5 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition"
+                                            >
+                                              <Sliders size={13}/>
+                                            </button>
+
+                                            {/* Botones de Gestión de Estado del Ciclo de Vida */}
+                                            {estado === 'activo' && (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  title="Suspender Comercio Temporalmente"
+                                                  onClick={() => handleOpenProviderLifecycleModal(p, 'suspendido')}
+                                                  className="bg-amber-500 hover:bg-amber-400 text-[#002855] text-[10px] font-black px-2.5 py-1 rounded-lg shadow transition flex items-center gap-1"
+                                                >
+                                                  <PauseCircle size={12} /> Suspender Comercio
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  title="Dar de Baja Permanente (Soft-Delete)"
+                                                  onClick={() => handleOpenProviderLifecycleModal(p, 'eliminado')}
+                                                  className="bg-red-600/80 hover:bg-red-600 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow transition flex items-center gap-1"
+                                                >
+                                                  <Trash2 size={12} /> Eliminar Proveedor
+                                                </button>
+                                              </>
+                                            )}
+
+                                            {estado === 'suspendido' && (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  title="Reactivar Comercio"
+                                                  onClick={() => handleOpenProviderLifecycleModal(p, 'activo')}
+                                                  className="bg-emerald-500 hover:bg-emerald-400 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow transition flex items-center gap-1"
+                                                >
+                                                  <PlayCircle size={12} /> Reactivar Comercio
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  title="Eliminar Proveedor (Baja Permanente Lógica)"
+                                                  onClick={() => handleOpenProviderLifecycleModal(p, 'eliminado')}
+                                                  className="bg-red-600 hover:bg-red-500 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow transition flex items-center gap-1"
+                                                >
+                                                  <Trash2 size={12} /> Eliminar Proveedor
+                                                </button>
+                                              </>
+                                            )}
+
+                                            {estado === 'eliminado' && (
+                                              <button
+                                                type="button"
+                                                title="Restaurar y Reactivar Comercio desde Archivo"
+                                                onClick={() => handleOpenProviderLifecycleModal(p, 'activo')}
+                                                className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow transition flex items-center gap-1"
+                                              >
+                                                <PlayCircle size={12} /> Reactivar Comercio
+                                              </button>
+                                            )}
                                           </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-[10px] text-blue-200 font-mono bg-white/10 px-2.5 py-1 rounded-lg">Total ventas: <span className="text-white font-bold">${p.totalVendido.toFixed(2)}</span></span>
-                                          <button
-                                            title="Descargar Reporte Excel Completo"
-                                            onClick={() => handleExportSupplierReport(p.id)}
-                                            className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-3 py-1 rounded-lg shadow transition flex items-center gap-1.5 active:scale-95"
-                                          >
-                                            <FileSpreadsheet size={13} />
-                                            Excel
-                                          </button>
-                                          <button title="Editar" onClick={() => { setEditingProvider(p); setEditProviderNombre(p.nombre); setEditProviderCategoria(p.categoria); setEditProviderCuenta(p.cuenta_enlace); setEditProviderComision((parseFloat(p.comision_colegio as string)*100).toString()); setShowAddProviderModal(false); }} className="p-1.5 text-blue-200 hover:text-white rounded-lg hover:bg-white/10 transition"><Sliders size={13}/></button>
-                                          <button title="Eliminar" disabled={isDeletingProviderId === p.id} onClick={() => handleDeleteProvider(p.id)} className="p-1.5 text-red-300 hover:text-red-200 rounded-lg hover:bg-white/10 transition disabled:opacity-40">{isDeletingProviderId === p.id ? <RefreshCw size={13} className="animate-spin"/> : <X size={13}/>}</button>
+                                        <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                                          {/* BLOQUE A */}
+                                          <div className="p-5 space-y-3">
+                                            <div className="flex items-center gap-2">
+                                              <div className="w-2 h-2 bg-blue-500 rounded-full ring-2 ring-blue-100"/>
+                                              <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Bloque A — Colegio → Proveedor</span>
+                                            </div>
+                                            <p className="text-[10px] text-slate-400">Ventas pendientes de transferir al proveedor (monto bruto completo)</p>
+                                            <div className="bg-blue-50 rounded-xl p-3 space-y-1.5">
+                                              <div className="flex justify-between text-xs"><span className="text-slate-500">Transacciones pendientes</span><span className="font-bold">{p.txPendientesLiqCount}</span></div>
+                                              <div className="flex justify-between items-end"><span className="text-[10px] text-slate-500">Monto a transferir</span><span className={`font-black text-xl font-mono ${p.montoPendienteProveedor > 0 ? 'text-blue-700' : 'text-slate-300'}`}>${p.montoPendienteProveedor.toFixed(2)}</span></div>
+                                            </div>
+                                            <button disabled={p.montoPendienteProveedor === 0 || isProcessingLiquidacion} onClick={() => { setShowLiquidarModal(p.id); setRefLiquidacion(''); }}
+                                              className="w-full bg-blue-600 text-white text-[11px] font-bold py-2.5 rounded-xl hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                                              💸 Liquidar y Cerrar Ciclo de Ventas
+                                            </button>
+                                            {p.montoPendienteProveedor === 0 && <p className="text-[9px] text-center text-green-600 font-bold">✅ Sin ventas pendientes</p>}
+                                          </div>
+                                          {/* BLOQUE B */}
+                                          <div className="p-5 space-y-3">
+                                            <div className="flex items-center gap-2">
+                                              <div className="w-2 h-2 bg-amber-500 rounded-full ring-2 ring-amber-100"/>
+                                              <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Bloque B — Proveedor → Colegio</span>
+                                            </div>
+                                            <p className="text-[10px] text-slate-400">Comisión acumulada a cobrar al proveedor — independiente del Bloque A</p>
+                                            <div className="bg-amber-50 rounded-xl p-3 space-y-1.5">
+                                              <div className="flex justify-between text-xs"><span className="text-slate-500">Tasa de comisión</span><span className="font-bold">{commPct}%</span></div>
+                                              <div className="flex justify-between items-end"><span className="text-[10px] text-slate-500">Comisión pendiente</span><span className={`font-black text-xl font-mono ${p.comisionPendienteColegio > 0 ? 'text-amber-600' : 'text-slate-300'}`}>${p.comisionPendienteColegio.toFixed(2)}</span></div>
+                                            </div>
+                                            <button disabled={p.comisionPendienteColegio === 0 || isProcessingComision} onClick={() => { setShowComisionModal(p.id); setRefComision(''); }}
+                                              className="w-full bg-amber-500 text-white text-[11px] font-bold py-2.5 rounded-xl hover:bg-amber-600 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                                              🏦 Registrar Cobro de Comisión
+                                            </button>
+                                            {p.comisionPendienteColegio === 0 && <p className="text-[9px] text-center text-green-600 font-bold">✅ Sin comisiones pendientes</p>}
+                                          </div>
                                         </div>
                                       </div>
-                                      <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                                        {/* BLOQUE A */}
-                                        <div className="p-5 space-y-3">
-                                          <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 bg-blue-500 rounded-full ring-2 ring-blue-100"/>
-                                            <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Bloque A — Colegio → Proveedor</span>
-                                          </div>
-                                          <p className="text-[10px] text-slate-400">Ventas pendientes de transferir al proveedor (monto bruto completo)</p>
-                                          <div className="bg-blue-50 rounded-xl p-3 space-y-1.5">
-                                            <div className="flex justify-between text-xs"><span className="text-slate-500">Transacciones pendientes</span><span className="font-bold">{p.txPendientesLiqCount}</span></div>
-                                            <div className="flex justify-between items-end"><span className="text-[10px] text-slate-500">Monto a transferir</span><span className={`font-black text-xl font-mono ${p.montoPendienteProveedor > 0 ? 'text-blue-700' : 'text-slate-300'}`}>${p.montoPendienteProveedor.toFixed(2)}</span></div>
-                                          </div>
-                                          <button disabled={p.montoPendienteProveedor === 0 || isProcessingLiquidacion} onClick={() => { setShowLiquidarModal(p.id); setRefLiquidacion(''); }}
-                                            className="w-full bg-blue-600 text-white text-[11px] font-bold py-2.5 rounded-xl hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                                            💸 Liquidar y Cerrar Ciclo de Ventas
-                                          </button>
-                                          {p.montoPendienteProveedor === 0 && <p className="text-[9px] text-center text-green-600 font-bold">✅ Sin ventas pendientes</p>}
-                                        </div>
-                                        {/* BLOQUE B */}
-                                        <div className="p-5 space-y-3">
-                                          <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 bg-amber-500 rounded-full ring-2 ring-amber-100"/>
-                                            <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Bloque B — Proveedor → Colegio</span>
-                                          </div>
-                                          <p className="text-[10px] text-slate-400">Comisión acumulada a cobrar al proveedor — independiente del Bloque A</p>
-                                          <div className="bg-amber-50 rounded-xl p-3 space-y-1.5">
-                                            <div className="flex justify-between text-xs"><span className="text-slate-500">Tasa de comisión</span><span className="font-bold">{commPct}%</span></div>
-                                            <div className="flex justify-between items-end"><span className="text-[10px] text-slate-500">Comisión pendiente</span><span className={`font-black text-xl font-mono ${p.comisionPendienteColegio > 0 ? 'text-amber-600' : 'text-slate-300'}`}>${p.comisionPendienteColegio.toFixed(2)}</span></div>
-                                          </div>
-                                          <button disabled={p.comisionPendienteColegio === 0 || isProcessingComision} onClick={() => { setShowComisionModal(p.id); setRefComision(''); }}
-                                            className="w-full bg-amber-500 text-white text-[11px] font-bold py-2.5 rounded-xl hover:bg-amber-600 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                                            🏦 Registrar Cobro de Comisión
-                                          </button>
-                                          {p.comisionPendienteColegio === 0 && <p className="text-[9px] text-center text-green-600 font-bold">✅ Sin comisiones pendientes</p>}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                                    );
+                                  });
+                                })()}
                               </div>
                             </>)}
                             {/* ── Historial sub-tab ── */}

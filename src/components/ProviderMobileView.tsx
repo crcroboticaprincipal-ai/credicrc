@@ -1,10 +1,16 @@
 import { useState, memo, useMemo } from 'react';
 import {
   Package2, QrCode, Store, LogOut, Upload, X, RefreshCw, Camera,
-  History, Percent, Building2, Save
+  History, Percent, Building2, Save, Ban
 } from 'lucide-react';
-import type { Order, ProductoProveedor, FeatureFlag, Transaction, Installment } from '../types';
-import { isTransactionAnulada, getMotivoAnulacion } from '../types';
+import type { Order, ProductoProveedor, FeatureFlag, Transaction, Installment, EstadoComercio } from '../types';
+import {
+  isTransactionAnulada,
+  getMotivoAnulacion,
+  isProviderSuspendido,
+  isProviderEliminado,
+  AVISO_CUENTA_SUSPENDIDA,
+} from '../types';
 import { FeatureGuard } from './FeatureGuard';
 import { PedidosProviderPanel } from './PedidosProviderPanel';
 
@@ -15,6 +21,9 @@ export interface ProviderMini {
   cuenta_enlace: string; comision_colegio: number; comision_por_cobrar?: number;
   direccion?: string | null; telefono?: string | null;
   pago_movil_banco?: string | null; pago_movil_cedula?: string | null; pago_movil_telefono?: string | null;
+  estado_comercio?: EstadoComercio | string | null;
+  motivo_suspension?: string | null;
+  fecha_cambio_estado?: string | null;
 }
 
 interface ProviderMobileViewProps {
@@ -151,7 +160,15 @@ export const ProviderMobileView = memo(function ProviderMobileView({
     return { bruto, pagado, comision, neto: bruto - comision };
   }, [monthlyTransactions, installments]);
 
+  const isSuspendido = isProviderSuspendido(provider);
+  const isEliminado = isProviderEliminado(provider);
+  const isBloqueadoComercio = isSuspendido || isEliminado;
+
   const handleAddProduct = async () => {
+    if (isBloqueadoComercio) {
+      onNotification('warning', 'Cuenta Comercial Suspendida', AVISO_CUENTA_SUSPENDIDA);
+      return;
+    }
     if (!npNombre.trim() || !npPrecio) {
       onNotification('error', 'Datos incompletos', 'Nombre y precio son requeridos.'); return;
     }
@@ -170,6 +187,10 @@ export const ProviderMobileView = memo(function ProviderMobileView({
 
   const handleSaveProfileSubmit = async () => {
     if (!onSaveProfile) return;
+    if (isBloqueadoComercio) {
+      onNotification('warning', 'Cuenta Comercial Suspendida', AVISO_CUENTA_SUSPENDIDA);
+      return;
+    }
     setIsSavingProfile(true);
     try {
       await onSaveProfile({
@@ -203,7 +224,19 @@ export const ProviderMobileView = memo(function ProviderMobileView({
                 : <Store className="text-white h-5 w-5" />}
             </div>
             <div>
-              <p className="text-[10px] text-blue-300 font-bold uppercase tracking-wider">{provider.categoria}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[10px] text-blue-300 font-bold uppercase tracking-wider">{provider.categoria}</p>
+                {isSuspendido && (
+                  <span className="text-[9px] font-black uppercase bg-amber-400 text-[#002855] px-2 py-0.5 rounded-full">
+                    ⚠️ Suspendido
+                  </span>
+                )}
+                {isEliminado && (
+                  <span className="text-[9px] font-black uppercase bg-red-500 text-white px-2 py-0.5 rounded-full">
+                    🚫 Baja
+                  </span>
+                )}
+              </div>
               <p className="text-sm font-black">{provider.nombre}</p>
             </div>
           </div>
@@ -216,6 +249,45 @@ export const ProviderMobileView = memo(function ProviderMobileView({
 
       {/* ─── ÁREA PRINCIPAL (PADDING INFERIOR DE SEGURIDAD GARANTIZADO PARA SCROLL) ─── */}
       <main className="flex-1 w-full pb-36" style={{ paddingBottom: 'calc(8.5rem + env(safe-area-inset-bottom, 24px))' }}>
+
+        {/* Banner Institucional cuando la cuenta comercial está suspendida o dada de baja */}
+        {isBloqueadoComercio && (
+          <div className="mx-4 mt-4 bg-gradient-to-r from-red-600 via-amber-600 to-orange-600 text-white rounded-2xl p-4 shadow-lg border border-red-300/40 animate-fade-in space-y-2.5">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Ban size={20} className="text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="inline-block text-[10px] font-black uppercase tracking-wider bg-black/25 px-2.5 py-0.5 rounded-full mb-1">
+                  {isEliminado ? '🚫 Cuenta Comercial Dada de Baja' : '⚠️ Cuenta Comercial Suspendida Temporalmente'}
+                </span>
+                <p className="text-xs font-bold leading-relaxed text-white/95">
+                  {AVISO_CUENTA_SUSPENDIDA}.
+                </p>
+                {provider.motivo_suspension && (
+                  <p className="text-[11px] font-bold bg-black/20 rounded-xl px-3 py-1.5 mt-1.5 text-amber-100">
+                    Motivo administrativo: {provider.motivo_suspension}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/20">
+              <span className="text-[10px] text-white/90 font-semibold">
+                ✅ Consulta de Reportes Financieros habilitada para conciliación
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('ventas');
+                  setVentasSubTab('reporte');
+                }}
+                className="bg-white text-[#002855] hover:bg-amber-50 text-[10px] font-black px-3 py-1.5 rounded-xl shadow transition flex-shrink-0"
+              >
+                📊 Ver Reportes Financieros
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ════ TAB: POS ════ */}
         {activeTab === 'pos' && (
@@ -505,6 +577,13 @@ export const ProviderMobileView = memo(function ProviderMobileView({
           <div className="p-4 space-y-4">
             <FeatureGuard moduloId="tienda_online" flags={flags} showBlockScreen>
               <>
+                {isBloqueadoComercio && (
+                  <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3.5 text-amber-900 text-xs font-bold flex items-center gap-2.5">
+                    <Ban size={16} className="text-red-600 flex-shrink-0" />
+                    <span>La edición de catálogo y publicación de productos está bloqueada mientras la cuenta comercial se encuentre suspendida.</span>
+                  </div>
+                )}
+
                 {/* Encabezado con límite */}
                 <div className="flex items-center justify-between">
                   <div>
@@ -514,9 +593,12 @@ export const ProviderMobileView = memo(function ProviderMobileView({
                     </p>
                   </div>
                   {productosActivos < 10 && (
-                    <button onClick={() => setShowAddProduct(true)}
-                      className="bg-[#002855] hover:bg-[#073B73] text-white text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 transition shadow">
-                      + Añadir
+                    <button
+                      onClick={() => !isBloqueadoComercio && setShowAddProduct(true)}
+                      disabled={isBloqueadoComercio}
+                      className="bg-[#002855] hover:bg-[#073B73] disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 transition shadow"
+                    >
+                      {isBloqueadoComercio ? 'Catálogo Bloqueado' : '+ Añadir'}
                     </button>
                   )}
                 </div>
@@ -542,7 +624,7 @@ export const ProviderMobileView = memo(function ProviderMobileView({
                     </div>
                   ) : (
                     provProductos.map(prod => (
-                      <div key={prod.id} className={`bg-white border rounded-2xl p-4 flex items-center gap-3 transition-opacity ${!prod.activo ? 'opacity-50' : ''}`}>
+                      <div key={prod.id} className={`bg-white border rounded-2xl p-4 flex items-center gap-3 transition-opacity ${!prod.activo || isBloqueadoComercio ? 'opacity-60' : ''}`}>
                         <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0">
                           {prod.imagen_url
                             ? <img src={prod.imagen_url} alt={prod.nombre} className="w-full h-full object-cover" />
@@ -552,18 +634,27 @@ export const ProviderMobileView = memo(function ProviderMobileView({
                           <p className="text-sm font-black text-slate-800 truncate">{prod.nombre}</p>
                           <p className="text-xs font-mono font-bold text-[#002855]">${prod.precio.toFixed(2)}</p>
                           <div className="flex gap-2 mt-1">
-                            <button onClick={() => onToggleProduct(prod.id, !prod.activo)}
-                              className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition ${prod.activo ? 'bg-green-50 text-green-600 border-green-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                            <button
+                              disabled={isBloqueadoComercio}
+                              onClick={() => !isBloqueadoComercio && onToggleProduct(prod.id, !prod.activo)}
+                              className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition disabled:cursor-not-allowed ${prod.activo ? 'bg-green-50 text-green-600 border-green-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                            >
                               {prod.activo ? '● Activo' : '○ Inactivo'}
                             </button>
-                            <button onClick={() => onToggleStock(prod.id, !prod.stock_disponible)}
-                              className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition ${prod.stock_disponible ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-orange-50 text-orange-600 border-orange-200'}`}>
+                            <button
+                              disabled={isBloqueadoComercio}
+                              onClick={() => !isBloqueadoComercio && onToggleStock(prod.id, !prod.stock_disponible)}
+                              className={`text-[9px] font-bold px-2 py-0.5 rounded-full border transition disabled:cursor-not-allowed ${prod.stock_disponible ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-orange-50 text-orange-600 border-orange-200'}`}
+                            >
                               {prod.stock_disponible ? 'En stock' : 'Sin stock'}
                             </button>
                           </div>
                         </div>
-                        <button onClick={() => onDeleteProduct(prod.id)}
-                          className="flex-shrink-0 w-8 h-8 bg-red-50 hover:bg-red-100 text-red-400 rounded-xl flex items-center justify-center transition">
+                        <button
+                          disabled={isBloqueadoComercio}
+                          onClick={() => !isBloqueadoComercio && onDeleteProduct(prod.id)}
+                          className="flex-shrink-0 w-8 h-8 bg-red-50 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed text-red-400 rounded-xl flex items-center justify-center transition"
+                        >
                           <X size={14} />
                         </button>
                       </div>
@@ -595,9 +686,10 @@ export const ProviderMobileView = memo(function ProviderMobileView({
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Dirección del Comercio</label>
                 <input
                   value={editDireccion}
+                  disabled={isBloqueadoComercio}
                   onChange={e => setEditDireccion(e.target.value)}
                   placeholder="Ej: Carrera 9 esquina calle 15, Duaca"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855]"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855] disabled:opacity-60"
                 />
               </div>
 
@@ -605,9 +697,10 @@ export const ProviderMobileView = memo(function ProviderMobileView({
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Teléfono de Contacto</label>
                 <input
                   value={editTelefono}
+                  disabled={isBloqueadoComercio}
                   onChange={e => setEditTelefono(e.target.value)}
                   placeholder="Ej: 0414-5000000"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855]"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855] disabled:opacity-60"
                 />
               </div>
 
@@ -618,27 +711,30 @@ export const ProviderMobileView = memo(function ProviderMobileView({
                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Banco Receptivo</label>
                     <input
                       value={editPmBanco}
+                      disabled={isBloqueadoComercio}
                       onChange={e => setEditPmBanco(e.target.value)}
                       placeholder="Ej: Banesco, Provincial, Mercantil"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855]"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855] disabled:opacity-60"
                     />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Cédula / RIF Titular</label>
                     <input
                       value={editPmCedula}
+                      disabled={isBloqueadoComercio}
                       onChange={e => setEditPmCedula(e.target.value)}
                       placeholder="Ej: J-12345678-0"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855]"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855] disabled:opacity-60"
                     />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Teléfono de Pago Móvil</label>
                     <input
                       value={editPmTelefono}
+                      disabled={isBloqueadoComercio}
                       onChange={e => setEditPmTelefono(e.target.value)}
                       placeholder="Ej: 0412-0000000"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855]"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold focus:outline-none focus:border-[#002855] disabled:opacity-60"
                     />
                   </div>
                 </div>
@@ -647,10 +743,16 @@ export const ProviderMobileView = memo(function ProviderMobileView({
               {onSaveProfile && (
                 <button
                   onClick={handleSaveProfileSubmit}
-                  disabled={isSavingProfile}
-                  className="w-full bg-[#002855] hover:bg-[#073B73] disabled:opacity-50 text-white font-black py-3 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow"
+                  disabled={isSavingProfile || isBloqueadoComercio}
+                  className="w-full bg-[#002855] hover:bg-[#073B73] disabled:opacity-50 disabled:cursor-not-allowed text-white font-black py-3 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow"
                 >
-                  {isSavingProfile ? <><RefreshCw size={14} className="animate-spin" /> Guardando...</> : <><Save size={14} /> Guardar Cambios de Mi Comercio</>}
+                  {isBloqueadoComercio ? (
+                    <><Ban size={14} /> Edición Deshabilitada (Cuenta Suspendida)</>
+                  ) : isSavingProfile ? (
+                    <><RefreshCw size={14} className="animate-spin" /> Guardando...</>
+                  ) : (
+                    <><Save size={14} /> Guardar Cambios de Mi Comercio</>
+                  )}
                 </button>
               )}
             </div>

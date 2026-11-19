@@ -499,4 +499,64 @@ export function getFechaAnulacion(tx?: {
   return null;
 }
 
+// ─── HELPERS DE GESTIÓN DEL CICLO DE VIDA DE PROVEEDORES (SOFT-DELETE) ───────
+export type EstadoComercio = 'activo' | 'suspendido' | 'eliminado';
+
+export const AVISO_CUENTA_SUSPENDIDA =
+  '⚠️ Cuenta Comercial Suspendida Temporalmente: El procesamiento de nuevas ventas se encuentra deshabilitado. Comuníquese con la Administración de CrediCRC';
+
+export function getEstadoComercio(
+  prov?: {
+    estado_comercio?: string | null;
+  } | null,
+  userDatosRegistro?: {
+    estado_comercio?: string | null;
+  } | null
+): EstadoComercio {
+  const raw = (prov?.estado_comercio || userDatosRegistro?.estado_comercio || 'activo')
+    .toString()
+    .toLowerCase()
+    .trim();
+  if (raw === 'suspendido' || raw === 'suspendida') return 'suspendido';
+  if (raw === 'eliminado' || raw === 'eliminada' || raw === 'baja') return 'eliminado';
+  return 'activo';
+}
+
+export function isProviderActivo(
+  prov?: { estado_comercio?: string | null } | null,
+  userDatosRegistro?: { estado_comercio?: string | null } | null
+): boolean {
+  return getEstadoComercio(prov, userDatosRegistro) === 'activo';
+}
+
+export function isProviderSuspendido(
+  prov?: { estado_comercio?: string | null } | null,
+  userDatosRegistro?: { estado_comercio?: string | null } | null
+): boolean {
+  return getEstadoComercio(prov, userDatosRegistro) === 'suspendido';
+}
+
+export function isProviderEliminado(
+  prov?: { estado_comercio?: string | null } | null,
+  userDatosRegistro?: { estado_comercio?: string | null } | null
+): boolean {
+  return getEstadoComercio(prov, userDatosRegistro) === 'eliminado';
+}
+
+export function getMotivoEstadoComercio(
+  prov?: { motivo_suspension?: string | null } | null,
+  userDatosRegistro?: { motivo_suspension?: string | null } | null
+): string | null {
+  const m = prov?.motivo_suspension || userDatosRegistro?.motivo_suspension || null;
+  return m && String(m).trim() ? String(m).trim() : null;
+}
+
+export function getFechaCambioEstadoComercio(
+  prov?: { fecha_cambio_estado?: string | null } | null,
+  userDatosRegistro?: { fecha_cambio_estado?: string | null } | null
+): string | null {
+  return prov?.fecha_cambio_estado || userDatosRegistro?.fecha_cambio_estado || null;
+}
+
+
 

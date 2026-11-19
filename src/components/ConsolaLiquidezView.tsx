@@ -10,10 +10,14 @@ import {
   calcularAvancePorPlazo,
   parseSolicitudMetadata,
   getOperacionesComprasStatus,
+  isProviderSuspendido,
+  isProviderEliminado,
+  AVISO_CUENTA_SUSPENDIDA,
   type FeatureFlag,
   type ConfiguracionLiquidez,
   type AvanceEfectivoSolicitud,
   type AvanceEfectivoCuota,
+  type EstadoComercio,
 } from '../types';
 
 interface ProviderInfo {
@@ -26,6 +30,8 @@ interface ProviderInfo {
   pago_movil_banco?: string;
   pago_movil_cedula?: string;
   pago_movil_telefono?: string;
+  estado_comercio?: EstadoComercio | string | null;
+  motivo_suspension?: string | null;
 }
 
 interface WorkerBasic {
@@ -160,9 +166,17 @@ export function ConsolaLiquidezView({
     return new Date(y, m + 1, 15).toISOString().split('T')[0];
   };
 
+  const isSuspendido = isProviderSuspendido(provider);
+  const isEliminado = isProviderEliminado(provider);
+  const isBloqueadoComercio = isSuspendido || isEliminado;
+
   // ── Acción: Guardar Configuración de Condiciones y Tasas ──
   const handleSaveConfigSubmit = async (e?: React.FormEvent, overrideActiva?: boolean) => {
     if (e) e.preventDefault();
+    if (isBloqueadoComercio) {
+      onNotification('warning', 'Cuenta Comercial Suspendida', AVISO_CUENTA_SUSPENDIDA);
+      return;
+    }
     const t1 = parseFloat(tasa1Cuota);
     const p1 = parseFloat(cargoMinimo1Cuota);
     const t2 = parseFloat(tasa2Cuotas);
@@ -204,6 +218,10 @@ export function ConsolaLiquidezView({
 
   // ── Acción: Confirmar Desembolso (Retención Atómica de Capital en el Cupo de $40) ──
   const handleConfirmDisbursement = async (sol: AvanceEfectivoSolicitud) => {
+    if (isBloqueadoComercio) {
+      onNotification('warning', 'Cuenta Comercial Suspendida', AVISO_CUENTA_SUSPENDIDA);
+      return;
+    }
     if (enCorteNomina) {
       onNotification('warning', '⏸️ Corte de Nómina en Curso', 'Por favor no procese desembolsos en este momento hasta que concluya la conciliación administrativa.');
       return;
@@ -569,6 +587,32 @@ export function ConsolaLiquidezView({
 
       {/* ── CONTENIDO DE LAS 3 SECCIONES CLAVE ── */}
       <div className="p-4 md:p-6 space-y-6 flex-1">
+        {isBloqueadoComercio && (
+          <div className="bg-gradient-to-r from-red-600 via-amber-600 to-orange-600 text-white rounded-2xl p-4 shadow-lg border border-red-300/40 animate-fade-in space-y-2">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="space-y-1">
+                <span className="inline-block text-[10px] font-black uppercase tracking-wider bg-black/25 px-2.5 py-0.5 rounded-full">
+                  {isEliminado ? '🚫 Cuenta Comercial Dada de Baja' : '⚠️ Cuenta Comercial Suspendida Temporalmente'}
+                </span>
+                <p className="text-xs font-bold leading-relaxed text-white/95">
+                  {AVISO_CUENTA_SUSPENDIDA}.
+                </p>
+                {provider.motivo_suspension && (
+                  <p className="text-[11px] font-bold bg-black/20 rounded-xl px-3 py-1.5 text-amber-100 inline-block">
+                    Motivo administrativo: {provider.motivo_suspension}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('reporte')}
+                className="bg-white text-[#002855] hover:bg-amber-50 text-xs font-black px-3.5 py-2 rounded-xl shadow transition flex-shrink-0"
+              >
+                📊 Ver Reporte Financiero
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ══════════════════════════════════════════════════════════════════════
             SECCIÓN 1: BANDEJA DE SOLICITUDES Y DESEMBOLSOS
